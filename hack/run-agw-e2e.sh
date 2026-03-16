@@ -160,13 +160,6 @@ cleanup_containers() {
 # Server Container Management
 # =============================================================================
 
-build_env_var() {
-    local name="$1"
-    local value="$2"
-    is_null_or_empty "$value" && return
-    echo "-e ${name}='${value}'"
-}
-
 wait_for_health_host() {
     local port="$1"
     
@@ -183,7 +176,11 @@ start_single_server() {
     local port="$3"
     
     local container="agw-e2e-server-${case_id}-${idx}"
-    local env="-e TEST_CASE_ID=${case_id} -e SERVER_PORT_1=${port}"
+    
+    local -a env_args=(
+        -e "TEST_CASE_ID=${case_id}"
+        -e "SERVER_PORT_1=${port}"
+    )
     
     local action=$(yq_get_endpoint "$case_id" "$idx" ".behavior.action")
     local resp_code=$(yq_get_endpoint "$case_id" "$idx" ".behavior.responseCode")
@@ -195,17 +192,17 @@ start_single_server() {
     local succ_code=$(yq_get_endpoint "$case_id" "$idx" ".behavior.successResponseCode")
     local succ_body=$(yq_get_endpoint "$case_id" "$idx" ".behavior.successResponseBody")
     
-    env="$env $(build_env_var BEHAVIOR_ACTION "$action")"
-    env="$env $(build_env_var RESPONSE_CODE "$resp_code")"
-    env="$env $(build_env_var RESPONSE_BODY "$resp_body")"
-    env="$env $(build_env_var DELAY "$delay")"
-    env="$env $(build_env_var FAIL_COUNT "$fail_count")"
-    env="$env $(build_env_var FAIL_RESPONSE_CODE "$fail_code")"
-    env="$env $(build_env_var FAIL_RESPONSE_BODY "$fail_body")"
-    env="$env $(build_env_var SUCCESS_RESPONSE_CODE "$succ_code")"
-    env="$env $(build_env_var SUCCESS_RESPONSE_BODY "$succ_body")"
+    is_null_or_empty "$action"      || env_args+=(-e "BEHAVIOR_ACTION=$action")
+    is_null_or_empty "$resp_code"   || env_args+=(-e "RESPONSE_CODE=$resp_code")
+    is_null_or_empty "$resp_body"   || env_args+=(-e "RESPONSE_BODY=$resp_body")
+    is_null_or_empty "$delay"       || env_args+=(-e "DELAY=$delay")
+    is_null_or_empty "$fail_count"  || env_args+=(-e "FAIL_COUNT=$fail_count")
+    is_null_or_empty "$fail_code"   || env_args+=(-e "FAIL_RESPONSE_CODE=$fail_code")
+    is_null_or_empty "$fail_body"   || env_args+=(-e "FAIL_RESPONSE_BODY=$fail_body")
+    is_null_or_empty "$succ_code"   || env_args+=(-e "SUCCESS_RESPONSE_CODE=$succ_code")
+    is_null_or_empty "$succ_body"   || env_args+=(-e "SUCCESS_RESPONSE_BODY=$succ_body")
     
-    eval docker run -d --name "$container" --network host $env agw-e2e-server:latest > /dev/null 2>&1 || {
+    docker run -d --name "$container" --network host "${env_args[@]}" agw-e2e-server:latest > /dev/null 2>&1 || {
         log_error "Failed to start: ${container}"
         return 1
     }
