@@ -207,6 +207,8 @@ expected:
 
 ## 4. Strategy File Design
 
+> **Note**: RetryPolicy uses global configuration (Option A). All test cases share the same policy defined in the business code (`getRegisterEndpointGroup`). This validates the existing business logic without varying policy parameters.
+
 ### 4.1 strategy.yaml Structure
 
 ```yaml
@@ -216,6 +218,21 @@ version: "1.0"
 config:
   timeout: 30s
   logLevel: debug
+
+# Global RetryPolicy (applied to all test cases)
+# Based on business code: getRegisterEndpointGroup
+retryPolicy:
+  # Primary endpoint (index 0)
+  primary:
+    maxAttempts: 2      # 2 attempts (1 initial + 1 retry)
+    timeout: 5s          # 5 seconds per request
+    interval: 0         # no backoff interval
+  
+  # Backup endpoints (index > 0)
+  backup:
+    maxAttempts: 1      # 1 attempt (no retry)
+    timeout: 5s
+    interval: 0
 
 # Test case list
 testCases:
@@ -297,7 +314,7 @@ Server supports the following behavior types:
 | `timeout` | Simulate timeout | `delay` (exceeds client timeout) |
 | `fail-after-n` | First N requests fail, then succeed | `count`, `failResponseCode` |
 
-### 4.4 Complete Examples
+### 4.4 Test Case Configuration Examples
 
 ```yaml
 version: "1.0"
@@ -546,6 +563,23 @@ testCases:
       endpoints: []
 ```
 
+### 4.5 Test Case Summary Table
+
+> **Note**: All test cases use the global RetryPolicy (primary: 2 attempts, 5s timeout; backup: 1 attempt, 5s timeout).
+
+| ID | Test Name | Expected Result | Server Endpoint Behavior | Description |
+|----|-----------|-----------------|-------------------------|-------------|
+| E2E-001 | First endpoint success on first try | httpCode: 200, responseCode: 0, msg: "success" | `action: success` | Verify first endpoint succeeds on first request |
+| E2E-002 | First endpoint fails then retries successfully | httpCode: 200, responseCode: 0, msg: "success" | `action: fail-after-n, count: 1` | First request returns 503, retry succeeds |
+| E2E-003 | Failover to second endpoint succeeds | httpCode: 200, responseCode: 0, msg: "success" | Endpoint1: `fail-after-n, count: 2`<br>Endpoint2: `action: success` | Primary fails twice, failover to backup succeeds |
+| E2E-004 | Both endpoints return errors | httpCode: 404, responseCode: 404, msg: "not found" | Endpoint1: `action: error, responseCode: 500`<br>Endpoint2: `action: error, responseCode: 404` | First returns 500, second returns 404 |
+| E2E-005 | All endpoints timeout | httpCode: 0, errorContains: "timeout" | Endpoint1: `action: timeout, delay: 10000`<br>Endpoint2: `action: timeout, delay: 10000` | All endpoints timeout, no response |
+| E2E-006 | 429 retry then success | httpCode: 200, responseCode: 0, msg: "success" | `action: fail-after-n, count: 1, failResponseCode: 429` | First returns 429 (retryable), retry succeeds |
+| E2E-007 | 408 retry then success | httpCode: 200, responseCode: 0, msg: "success" | `action: fail-after-n, count: 1, failResponseCode: 408` | First returns 408 (retryable), retry succeeds |
+| E2E-008 | 400 no retry | httpCode: 400, responseCode: 400, msg: "bad request" | `action: error, responseCode: 400` | 4xx error not retried on same endpoint |
+| E2E-009 | 401 no retry | httpCode: 401, responseCode: 401, msg: "unauthorized" | `action: error, responseCode: 401` | 4xx error not retried on same endpoint |
+| E2E-010 | Client config error causes timeout | httpCode: 0, errorContains: "connection refused" | No server endpoints | Invalid host causes connection error, no retry |
+
 ## 5. File Structure Design
 
 ```
@@ -760,7 +794,12 @@ Total: 10 | Passed: 10 | Failed: 0
    - Report contents: Test summary, pass/fail status, execution time, detailed logs per case
    - Includes visual charts (pie chart for pass rate, bar chart for timing)
 
-4. **CI integration**: Not required for now - will be manually integrated later
+4. **RetryPolicy**: ✓ Confirmed - Global configuration (Option A)
+   - Primary endpoint: 2 attempts (1 initial + 1 retry), 5s timeout
+   - Backup endpoints: 1 attempt, 5s timeout
+   - All test cases share the same policy from business code
+
+5. **CI integration**: Not required for now - will be manually integrated later
 
 ---
 
