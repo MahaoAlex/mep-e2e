@@ -1,5 +1,7 @@
 # mep-e2e
 
+## 背景（当前业务实现参考）
+
 ### 申请GatewayClient
 
 ```go
@@ -75,7 +77,7 @@ func NewDefaultMultiEndpointClient(configures ...MultiEndpointConfigure) *Defaul
 }
 ```
 
-## 基于申请的GatewayClient，进行多端点请求
+### 基于申请的GatewayClient，进行多端点请求
 
 ```go
 func (c *AgentGatewayClient) RegisterSandbox(ctx context.Context, regParams *RegisterSandboxRequest) (*RegisterSandboxResponse, error) {
@@ -121,7 +123,27 @@ func executeGatewayRequest[T ResponseConstraint](
 }
 ```
 
-## 任务
+### 服务端返回
+
+```go
+type RegisterSandboxResponse struct {
+	// Code Business response code, independent of HTTP status code.
+	Code int `json:"code"`
+	// Message is the response message
+	Message string `json:"msg"`
+	// RequestID is the unique identifier for the request
+	RequestID string `json:"request_id"`
+}
+
+type UnregisterSandboxRequest struct {
+	// SandboxID is the unique identifier of the sandbox
+	SandboxID string `json:"sandbox_id"`
+	// CellID is the identifier for the cell (required)
+	CellID string `json:"cell_id"`
+}
+```
+
+## 本项目任务
 
 ### End2End测试用例防护
 
