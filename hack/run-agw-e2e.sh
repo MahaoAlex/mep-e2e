@@ -20,6 +20,8 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 declare -a SERVER_CONTAINERS
+declare -a SERVER_ALIASES
+CURRENT_NETWORK=""
 
 # Check yq availability once
 YQ_AVAILABLE=false
@@ -207,22 +209,28 @@ wait_for_health() {
     log_warn "Health check timeout: ${container}"
 }
 
+get_endpoint_id() {
+    yq_get_endpoint "$1" "$2" ".id"
+}
+
 start_single_server() {
     local case_id="$1"
     local idx="$2"
     local port="$3"
     local network="$4"
     
+    local endpoint_id=$(get_endpoint_id "$case_id" "$idx")
     local container="agw-e2e-server-${case_id}-${idx}"
     local env=$(parse_endpoint_env "$case_id" "$idx" "$port")
     
-    eval docker run -d --name "$container" --network "$network" -p "${port}:8080" $env agw-e2e-server:latest > /dev/null 2>&1 || {
+    eval docker run -d --name "$container" --network "$network" --network-alias "$endpoint_id" -p "${port}:8080" $env agw-e2e-server:latest > /dev/null 2>&1 || {
         log_error "Failed to start: ${container}"
         return 1
     }
     
     SERVER_CONTAINERS+=("$container")
-    log_info "Started server: ${container} on port ${port}"
+    SERVER_ALIASES+=("$endpoint_id")
+    log_info "Started server: ${container} (alias: ${endpoint_id}) on port ${port}"
 }
 
 start_server_containers() {
@@ -237,6 +245,8 @@ start_server_containers() {
     
     docker network create "$network" 2>/dev/null || true
     SERVER_CONTAINERS=()
+    SERVER_ALIASES=()
+    CURRENT_NETWORK="$network"
     
     for ((i=0; i<count; i++)); do
         local port=$((base_port + i))
@@ -266,9 +276,9 @@ stop_server_containers() {
 
 build_callback_addrs() {
     local addrs=""
-    for c in "${SERVER_CONTAINERS[@]}"; do
-        local port=$(docker port "$c" 8080 2>/dev/null | cut -d: -f2)
-        addrs="${addrs:+$addrs,}localhost:$port"
+    for i in "${!SERVER_ALIASES[@]}"; do
+        local alias="${SERVER_ALIASES[$i]}"
+        addrs="${addrs:+$addrs,}${alias}:8080"
     done
     echo "$addrs"
 }
@@ -277,11 +287,14 @@ run_client() {
     local case_id="$1"
     local client_env="$2"
     local callback="$3"
+    local network="$4"
     
     local container="agw-e2e-client-${case_id}"
+    local network_arg=""
+    [ -n "$network" ] && network_arg="--network $network"
     
     if [ -n "$callback" ]; then
-        docker run --rm --name "$container" $client_env -e "CALLBACK_ADDRS=$callback" agw-e2e-client:latest 2>&1
+        docker run --rm --name "$container" $network_arg $client_env -e "CALLBACK_ADDRS=$callback" agw-e2e-client:latest 2>&1
     else
         docker run --rm --name "$container" $client_env agw-e2e-client:latest 2>&1
     fi
@@ -319,15 +332,14 @@ run_test_case() {
         is_null_or_empty "$env_line" || client_env="$client_env -e $env_line"
     done <<< "$(get_client_envs "$case_id")"
     
-    local callback=""
-    [ ${#SERVER_CONTAINERS[@]} -gt 0 ] && callback=$(build_callback_addrs)
-    
     local output exit_code=0
-    output=$(run_client "$case_id" "$client_env" "$callback") || exit_code=$?
+    output=$(run_client "$case_id" "$client_env" "" "$network") || exit_code=$?
     
     {
         echo "=== ${case_id}: ${name} ==="
         echo "Servers: ${SERVER_CONTAINERS[*]}"
+        echo "Aliases: ${SERVER_ALIASES[*]}"
+        echo "Network: ${network}"
         echo "Output:"
         echo "$output"
         echo "Exit: ${exit_code}"
