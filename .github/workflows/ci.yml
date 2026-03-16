@@ -90,6 +90,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Make script executable
+        run: chmod +x run-agw-e2e.sh
+
       - name: Check run-agw-e2e.sh is executable
         run: |
           test -x run-agw-e2e.sh && echo "Script is executable" || exit 1
