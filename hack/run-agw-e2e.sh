@@ -261,7 +261,11 @@ run_client() {
     
     local container="agw-e2e-client-${case_id}"
     
-    docker run --rm --name "$container" --network host "${env_args[@]}" -e "CALLBACK_ADDRS=$callback" agw-e2e-client:latest 2>&1
+    if [ -n "$callback" ]; then
+        docker run --rm --name "$container" --network host "${env_args[@]}" -e "CALLBACK_ADDRS=$callback" agw-e2e-client:latest 2>&1
+    else
+        docker run --rm --name "$container" --network host "${env_args[@]}" agw-e2e-client:latest 2>&1
+    fi
 }
 
 # =============================================================================
