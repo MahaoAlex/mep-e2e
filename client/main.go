@@ -24,36 +24,48 @@ type RegisterResponse struct {
 	RequestID string `json:"request_id"`
 }
 
+type ExpectedConfig struct {
+	Error        string
+	ResponseCode string
+	Message      string
+}
+
+type ActualResult struct {
+	Error        error
+	ResponseCode int
+	Message      string
+}
+
 type ValidationResult struct {
 	Pass     bool
 	ErrorMsg string
 }
 
-func validateResult(err error, expectedError, expectedResponseCode string, responseCode int, expectedMsg, responseMsg string) ValidationResult {
-	if err != nil {
-		if expectedError != "" && !strings.Contains(err.Error(), expectedError) {
-			return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Expected error containing '%s', got: %v", expectedError, err)}
+func validateResult(expected ExpectedConfig, actual ActualResult) ValidationResult {
+	if actual.Error != nil {
+		if expected.Error != "" && !strings.Contains(actual.Error.Error(), expected.Error) {
+			return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Expected error containing '%s', got: %v", expected.Error, actual.Error)}
 		}
-		if expectedError == "" {
-			return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Unexpected error: %v", err)}
+		if expected.Error == "" {
+			return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Unexpected error: %v", actual.Error)}
 		}
 		return ValidationResult{Pass: true}
 	}
 
-	if expectedError != "" {
-		return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Expected error containing '%s', but got success", expectedError)}
+	if expected.Error != "" {
+		return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Expected error containing '%s', but got success", expected.Error)}
 	}
 
-	if expectedResponseCode != "" {
+	if expected.ResponseCode != "" {
 		expectedCode := 0
-		fmt.Sscanf(expectedResponseCode, "%d", &expectedCode)
-		if responseCode != expectedCode {
-			return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Expected response code %d, got %d", expectedCode, responseCode)}
+		fmt.Sscanf(expected.ResponseCode, "%d", &expectedCode)
+		if actual.ResponseCode != expectedCode {
+			return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Expected response code %d, got %d", expectedCode, actual.ResponseCode)}
 		}
 	}
 
-	if expectedMsg != "" && responseMsg != expectedMsg {
-		return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Expected message '%s', got '%s'", expectedMsg, responseMsg)}
+	if expected.Message != "" && actual.Message != expected.Message {
+		return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Expected message '%s', got '%s'", expected.Message, actual.Message)}
 	}
 
 	return ValidationResult{Pass: true}
@@ -103,7 +115,18 @@ func main() {
 		}
 	}
 
-	result := validateResult(err, expectedError, expectedResponseCode, responseCode, expectedMsg, responseMsg)
+	result := validateResult(
+		ExpectedConfig{
+			Error:        expectedError,
+			ResponseCode: expectedResponseCode,
+			Message:      expectedMsg,
+		},
+		ActualResult{
+			Error:        err,
+			ResponseCode: responseCode,
+			Message:      responseMsg,
+		},
+	)
 
 	if result.Pass {
 		log.Printf("TEST PASSED: %s", testCaseID)
