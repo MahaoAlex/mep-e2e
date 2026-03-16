@@ -378,7 +378,7 @@ count_results() {
             FAIL) ((failed++)) ;;
             SKIP) ((skipped++)) ;;
         esac
-    done < "${LOG_DIR}/results.txt"
+    done < <(grep -E "^(PASS|FAIL|SKIP):" "${LOG_DIR}/results.txt" 2>/dev/null)
     
     echo "${passed} ${failed} ${skipped}"
 }
@@ -411,7 +411,7 @@ generate_report() {
             [ "$result" = "FAIL" ] && icon="❌"
             [ "$result" = "SKIP" ] && icon="⏭️"
             echo "| $id | $icon $result | ${code:-0} |"
-        done < "${LOG_DIR}/results.txt"
+        done < <(grep -E "^(PASS|FAIL|SKIP):" "${LOG_DIR}/results.txt" 2>/dev/null)
         
         echo ""
         echo "Logs: \`${LOG_DIR}\`"
