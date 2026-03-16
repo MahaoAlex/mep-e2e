@@ -27,7 +27,7 @@ type RegisterResponse struct {
 func main() {
 	testCaseID := os.Getenv("TEST_CASE_ID")
 	callbackAddrs := os.Getenv("CALLBACK_ADDRS")
-	expectedHTTPCode := os.Getenv("EXPECTED_HTTP_CODE")
+	_ = os.Getenv("EXPECTED_HTTP_CODE")
 	expectedResponseCode := os.Getenv("EXPECTED_RESPONSE_CODE")
 	expectedMsg := os.Getenv("EXPECTED_MSG")
 	expectedError := os.Getenv("EXPECTED_ERROR")

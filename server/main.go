@@ -85,7 +85,7 @@ func main() {
 	cfg := loadConfig()
 	_ = cfg
 
-	ctx, cancel := context.WithCancel(context.Background())
+	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var wg sync.WaitGroup
@@ -106,8 +106,8 @@ func main() {
 	serverBehavior := loadServerBehavior()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/register", registerHandler(serverBehavior))
-	mux.HandleFunc("/unregister", unregisterHandler(serverBehavior))
+	mux.HandleFunc("/v3/api/sandbox/register", registerHandler(serverBehavior))
+	mux.HandleFunc("/v3/api/sandbox/unregister", unregisterHandler(serverBehavior))
 	mux.HandleFunc("/health", healthHandler)
 
 	server := &http.Server{
@@ -131,8 +131,8 @@ func main() {
 		defer wg.Done()
 		log.Printf("Server 2 listening on port %d", server2Port)
 		mux2 := http.NewServeMux()
-		mux2.HandleFunc("/register", registerHandler(serverBehavior))
-		mux2.HandleFunc("/unregister", unregisterHandler(serverBehavior))
+		mux2.HandleFunc("/v3/api/sandbox/register", registerHandler(serverBehavior))
+		mux2.HandleFunc("/v3/api/sandbox/unregister", unregisterHandler(serverBehavior))
 		mux2.HandleFunc("/health", healthHandler)
 
 		server2 := &http.Server{
