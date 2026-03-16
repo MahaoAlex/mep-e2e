@@ -106,6 +106,105 @@ responseBody: '{"code":0,"msg":"success","request_id":"test-001"}'
 responseBody: '{"code":503,"msg":"service unavailable","request_id":"test-001"}'
 ```
 
+## 3.4 Error Definition
+
+According to README.md, the multi-endpoint error handling is defined as follows:
+
+### AttemptError Structure
+
+Each HTTP request attempt records an `AttemptError`:
+
+```go
+type AttemptError struct {
+    AttemptNumber    int       `json:"attempt_number"`    // Attempt number, starting from 1
+    RequestID        string    `json:"request_id"`       // Request-ID for distributed tracing
+    Endpoint         string    `json:"endpoint"`         // Request endpoint address
+    UnifiedErrorCode int       `json:"unified_error_code"` // Unified error code
+    UnifiedErrorDetail string  `json:"unified_error_detail"` // Error details
+    Timestamp        string    `json:"timestamp"`        // RFC3339 format
+    ErrorType        ErrorType `json:"error_type"`       // Error type
+}
+```
+
+### Error Type Constants
+
+```go
+// Client error types
+ErrorTypeClientConfig  ErrorType = "client_config_error"  // Client configuration error
+ErrorTypeClientNetwork ErrorType = "client_network_error" // Client network error
+ErrorTypeClientRequest ErrorType = "client_request_error" // Client request error
+ErrorTypeClientTimeout ErrorType = "client_timeout_error" // Client timeout error
+
+// Server error types
+ErrorTypeServer4xx     ErrorType = "server_error_4xx"     // Server 4xx business error
+ErrorTypeServer5xx     ErrorType = "server_error_5xx"     // Server 5xx system error
+ErrorTypeServerUnknown ErrorType = "server_error_unknown"
+
+// Unhandled system error or non-HTTP error
+ErrorTypeUnexpectedError ErrorType = "unexpected_error"
+
+// Unified error codes
+UnifiedCodeClientDefault   = 0  // Fixed error code for all client-side errors
+UnifiedUnexpectErrorCode   = 1  // Unexpected error code
+```
+
+### Error Code Mapping
+
+| Error Type | UnifiedErrorCode | UnifiedErrorDetail |
+|------------|------------------|-------------------|
+| `ErrorTypeClientConfig` | 0 | Specific network errors, timeout info |
+| `ErrorTypeClientNetwork` | 0 | Network connection errors |
+| `ErrorTypeClientTimeout` | 0 | "request timed out" |
+| `ErrorTypeServer4xx` | HTTP status (e.g., 400, 401, 404) | Server response body |
+| `ErrorTypeServer5xx` | HTTP status (e.g., 500, 503) | Server response body |
+| `ErrorTypeUnexpectedError` | 1 | Unexpected error message |
+
+### MultiEndpointError Error Message Format
+
+```go
+func (e *MultiEndpointError) Error() string {
+    last := e.AttemptErrors[len(e.AttemptErrors)-1]
+    
+    switch last.ErrorType {
+    case ErrorTypeClientConfig:
+        msg = "client configuration error: " + last.UnifiedErrorDetail
+    case ErrorTypeClientNetwork:
+        msg = "client network error: " + last.UnifiedErrorDetail
+    case ErrorTypeClientTimeout:
+        msg = "client timeout error: request timed out"
+    case ErrorTypeServer4xx:
+        msg = fmt.Sprintf("server 4xx error: [%d] %s", last.UnifiedErrorCode, last.UnifiedErrorDetail)
+    case ErrorTypeServer5xx:
+        msg = fmt.Sprintf("server 5xx error: [%d] %s", last.UnifiedErrorCode, last.UnifiedErrorDetail)
+    default:
+        msg = fmt.Sprintf("unhandled error type [%s]: %s", last.ErrorType, last.UnifiedErrorDetail)
+    }
+    
+    return fmt.Sprintf("%s (total attempts: %d, group: %s)", msg, e.TotalAttempts, e.GroupName)
+}
+```
+
+### Expected Error Validation
+
+For test cases expecting errors, use the `errorContains` field in `expected`:
+
+```yaml
+# E2E-005: Timeout scenario
+expected:
+  httpCode: 0
+  errorContains: "timeout"
+
+# E2E-008: 400 Bad Request
+expected:
+  httpCode: 400
+  errorContains: "server 4xx error"
+
+# E2E-010: Client config error
+expected:
+  httpCode: 0
+  errorContains: "client configuration error"
+```
+
 ## 4. Strategy File Design
 
 ### 4.1 strategy.yaml Structure
@@ -124,6 +223,12 @@ testCases:
     name: "First endpoint success on first try"
     description: "Verify first endpoint succeeds on first request"
     enabled: true
+    
+    # Expected result (for test validation)
+    expected:
+      httpCode: 200
+      responseCode: 0
+      responseMsg: "success"
     
     # Client config
     client:
@@ -146,7 +251,42 @@ testCases:
             failAfter: 0
 ```
 
-### 4.2 Behavior Config
+### 4.2 Expected Result Validation
+
+Each test case defines `expected` results to validate:
+
+```yaml
+expected:
+  httpCode: 200          # Expected HTTP status code
+  responseCode: 0        # Expected business response code
+  responseMsg: "success" # Expected response message
+  errorContains: ""      # Optional: expected error substring (for error cases)
+```
+
+**Success Case Example (E2E-001)**:
+```yaml
+expected:
+  httpCode: 200
+  responseCode: 0
+  responseMsg: "success"
+```
+
+**Error Case Example (E2E-004 - Both endpoints return errors)**:
+```yaml
+expected:
+  httpCode: 404          # Last endpoint returns 404
+  responseCode: 404
+  responseMsg: "not found"
+```
+
+**Timeout Case Example (E2E-005)**:
+```yaml
+expected:
+  httpCode: 0            # 0 indicates timeout/connection error
+  errorContains: "timeout" # Match error message contains "timeout"
+```
+
+### 4.3 Behavior Config
 
 Server supports the following behavior types:
 
@@ -157,7 +297,7 @@ Server supports the following behavior types:
 | `timeout` | Simulate timeout | `delay` (exceeds client timeout) |
 | `fail-after-n` | First N requests fail, then succeed | `count`, `failResponseCode` |
 
-### 4.3 Complete Examples
+### 4.4 Complete Examples
 
 ```yaml
 version: "1.0"
@@ -170,6 +310,10 @@ testCases:
   - id: "E2E-001"
     name: "First endpoint success on first try"
     enabled: true
+    expected:
+      httpCode: 200
+      responseCode: 0
+      responseMsg: "success"
     client:
       image: "e2e-client:latest"
       env:
@@ -188,6 +332,10 @@ testCases:
   - id: "E2E-002"
     name: "First endpoint fails then retries successfully"
     enabled: true
+    expected:
+      httpCode: 200
+      responseCode: 0
+      responseMsg: "success"
     client:
       image: "e2e-client:latest"
       env:
@@ -209,6 +357,10 @@ testCases:
   - id: "E2E-003"
     name: "Failover to second endpoint succeeds"
     enabled: true
+    expected:
+      httpCode: 200
+      responseCode: 0
+      responseMsg: "success"
     client:
       image: "e2e-client:latest"
       env:
@@ -234,6 +386,10 @@ testCases:
   - id: "E2E-004"
     name: "Both endpoints return errors"
     enabled: true
+    expected:
+      httpCode: 404
+      responseCode: 404
+      responseMsg: "not found"
     client:
       image: "e2e-client:latest"
       env:
@@ -258,6 +414,9 @@ testCases:
   - id: "E2E-005"
     name: "All endpoints timeout"
     enabled: true
+    expected:
+      httpCode: 0
+      errorContains: "timeout"
     client:
       image: "e2e-client:latest"
       env:
@@ -280,6 +439,10 @@ testCases:
   - id: "E2E-006"
     name: "First endpoint returns 429 then retries successfully"
     enabled: true
+    expected:
+      httpCode: 200
+      responseCode: 0
+      responseMsg: "success"
     client:
       image: "e2e-client:latest"
       env:
@@ -301,6 +464,10 @@ testCases:
   - id: "E2E-007"
     name: "First endpoint returns 408 then retries successfully"
     enabled: true
+    expected:
+      httpCode: 200
+      responseCode: 0
+      responseMsg: "success"
     client:
       image: "e2e-client:latest"
       env:
@@ -322,6 +489,10 @@ testCases:
   - id: "E2E-008"
     name: "First endpoint returns 400 no retry"
     enabled: true
+    expected:
+      httpCode: 400
+      responseCode: 400
+      responseMsg: "bad request"
     client:
       image: "e2e-client:latest"
       env:
@@ -340,6 +511,10 @@ testCases:
   - id: "E2E-009"
     name: "First endpoint returns 401 no retry"
     enabled: true
+    expected:
+      httpCode: 401
+      responseCode: 401
+      responseMsg: "unauthorized"
     client:
       image: "e2e-client:latest"
       env:
@@ -358,6 +533,9 @@ testCases:
   - id: "E2E-010"
     name: "Client config error causes timeout no retry"
     enabled: true
+    expected:
+      httpCode: 0
+      errorContains: "connection refused"
     client:
       image: "e2e-client:latest"
       env:

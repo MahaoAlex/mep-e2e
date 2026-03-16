@@ -102,8 +102,7 @@ func (c *AgentGatewayClient) RegisterSandbox(ctx context.Context, regParams *Reg
 
 	c.logger.Info("Sandbox registered successfully",
 		"sandboxID", regParams.SandboxID,
-		"code", resp.Code,
-		"message", resp.Message,
+		"code", resp.Code,"message", resp.Message,
 		"requestID", resp.RequestID)
 
 	return resp, nil
@@ -142,6 +141,110 @@ type UnregisterSandboxRequest struct {
 	CellID string `json:"cell_id"`
 }
 ```
+
+### 错误信息定义
+
+1. 针对单个Endpoint的单次http request的Attempt，都会记录AttemptError
+2. 针对单个Endpoint的请求，会返回AttemptError的数组，并基于这个数组的最后一次AttemptError，整合返回整体请求的Error信息
+
+·```go
+// AttemptError records error information for a single HTTP request attempt
+type AttemptError struct {
+    // Attempt number, starting from 1
+    AttemptNumber int `json:"attempt_number"`
+
+    // Request-ID for distributed tracing
+    RequestID string `json:"request_id"`
+
+    // Request endpoint address
+    Endpoint string `json:"endpoint"`
+
+    // Unified error code
+    // - Client errors: use string enumeration (e.g., "client_config_error", "client_network_error", "client_timeout_error")
+    // - Server errors: use string form of HTTP status code (e.g., "500", "404")
+    UnifiedErrorCode int `json:"unified_error_code"`
+
+    // Unified error information
+    // - Client errors: contains specific network errors, timeout information, etc.
+    // - Server errors: contains complete response body returned by the server
+    UnifiedErrorDetail string `json:"unified_error_detail"`
+
+    // Timestamp when the error occurred (RFC3339 format)
+    Timestamp string `json:"timestamp"`
+
+    // Error type
+    ErrorType ErrorType `json:"error_type"`
+
+}
+
+// Error type constants
+const (
+// UnifiedCodeClientDefault is the fixed error code used for all client-side errors.
+// For server-side errors, the UnifiedErrorCode will correspond to the actual HTTP status code.
+UnifiedCodeClientDefault = 0
+UnifiedUnexpectErrorCode = 1
+
+    // Client error types
+    ErrorTypeClientConfig  ErrorType = "client_config_error"  // Client configuration error
+    ErrorTypeClientNetwork ErrorType = "client_network_error" // Client network error
+    ErrorTypeClientRequest ErrorType = "client_request_error" // Client request error
+    ErrorTypeClientTimeout ErrorType = "client_timeout_error" // Client timeout error
+
+    // Server error types
+    ErrorTypeServer4xx     ErrorType = "server_error_4xx" // Server 4xx business error
+    ErrorTypeServer5xx     ErrorType = "server_error_5xx" // Server 5xx system error
+    ErrorTypeServerUnknown ErrorType = "server_error_unknown"
+
+    // Unhandled system error or non-HTTP error
+    ErrorTypeUnexpectedError = "unexpected_error"
+
+)
+
+````
+
+```go
+
+func (e *MultiEndpointError) Error() string {
+    // Guard clause: Handle empty attempts early
+    if len(e.AttemptErrors) == 0 {
+       return fmt.Sprintf("multi-endpoint error: no attempt details (total attempts: %d, group: %s)",
+          e.TotalAttempts, e.GroupName)
+    }
+
+    last := e.AttemptErrors[len(e.AttemptErrors)-1]
+    var msg string
+
+    // Format the core error message based on type
+    switch last.ErrorType {
+    case ErrorTypeClientConfig:
+       msg = "client configuration error: " + last.UnifiedErrorDetail
+    case ErrorTypeClientNetwork:
+       msg = "client network error: " + last.UnifiedErrorDetail
+    case ErrorTypeClientTimeout:
+       msg = "client timeout error: request timed out"
+    case ErrorTypeServer4xx, ErrorTypeServer5xx, ErrorTypeServerUnknown:
+       // Consolidate similar formatting logic for server/unknown errors
+       prefix := "unknown error"
+       if last.ErrorType == ErrorTypeServer4xx {
+          prefix = "server 4xx error"
+       } else if last.ErrorType == ErrorTypeServer5xx {
+          prefix = "server 5xx error"
+       }
+
+       if last.UnifiedErrorCode > 0 {
+          msg = fmt.Sprintf("%s: [%d] %s", prefix, last.UnifiedErrorCode, last.UnifiedErrorDetail)
+       } else {
+          msg = fmt.Sprintf("%s: %s", prefix, last.UnifiedErrorDetail)
+       }
+    default:
+       msg = fmt.Sprintf("unhandled error type [%s]: %s", last.ErrorType, last.UnifiedErrorDetail)
+    }
+
+    // Centralized suffix: Attach metadata once at the end
+    return fmt.Sprintf("%s (total attempts: %d, group: %s)", msg, e.TotalAttempts, e.GroupName)
+}
+
+````
 
 ## 本项目任务
 
