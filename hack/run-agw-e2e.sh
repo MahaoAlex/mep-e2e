@@ -255,12 +255,13 @@ build_callback_addrs() {
 
 run_client() {
     local case_id="$1"
-    local client_env="$2"
-    local callback="$3"
+    local callback="$2"
+    shift 2
+    local -a env_args=("$@")
     
     local container="agw-e2e-client-${case_id}"
     
-    docker run --rm --name "$container" --network host $client_env -e "CALLBACK_ADDRS=$callback" agw-e2e-client:latest 2>&1
+    docker run --rm --name "$container" --network host "${env_args[@]}" -e "CALLBACK_ADDRS=$callback" agw-e2e-client:latest 2>&1
 }
 
 # =============================================================================
@@ -285,19 +286,19 @@ run_test_case() {
     local resp_msg=$(get_expected "$case_id" "responseMsg")
     local err_contains=$(get_expected "$case_id" "errorContains")
     
-    local client_env="-e TEST_CASE_ID=$case_id"
-    is_null_or_empty "$http_code"    || client_env="$client_env -e EXPECTED_HTTP_CODE=$http_code"
-    is_null_or_empty "$resp_code"    || client_env="$client_env -e EXPECTED_RESPONSE_CODE=$resp_code"
-    is_null_or_empty "$resp_msg"     || client_env="$client_env -e EXPECTED_MSG=$resp_msg"
-    is_null_or_empty "$err_contains" || client_env="$client_env -e EXPECTED_ERROR=$err_contains"
+    local -a client_env=(-e "TEST_CASE_ID=$case_id")
+    is_null_or_empty "$http_code"    || client_env+=(-e "EXPECTED_HTTP_CODE=$http_code")
+    is_null_or_empty "$resp_code"    || client_env+=(-e "EXPECTED_RESPONSE_CODE=$resp_code")
+    is_null_or_empty "$resp_msg"     || client_env+=(-e "EXPECTED_MSG=$resp_msg")
+    is_null_or_empty "$err_contains" || client_env+=(-e "EXPECTED_ERROR=$err_contains")
     
     while IFS= read -r env_line; do
-        is_null_or_empty "$env_line" || client_env="$client_env -e $env_line"
+        is_null_or_empty "$env_line" || client_env+=(-e "$env_line")
     done <<< "$(get_client_envs "$case_id")"
     
     local callback=$(build_callback_addrs)
     local output exit_code=0
-    output=$(run_client "$case_id" "$client_env" "$callback") || exit_code=$?
+    output=$(run_client "$case_id" "$callback" "${client_env[@]}") || exit_code=$?
     
     {
         echo "=== ${case_id}: ${name} ==="
