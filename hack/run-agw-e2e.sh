@@ -304,14 +304,86 @@ run_test_case() {
     local output exit_code=0
     output=$(run_client "$case_id" "$callback" "${client_env[@]}") || exit_code=$?
     
+    # Build endpoint details
+    local endpoint_details=""
+    local count=${#SERVER_PORTS[@]}
+    for ((i=0; i<count; i++)); do
+        local port="${SERVER_PORTS[$i]}"
+        local action=$(yq_get_endpoint "$case_id" "$i" ".behavior.action")
+        local resp_code_ep=$(yq_get_endpoint "$case_id" "$i" ".behavior.responseCode")
+        local resp_body_ep=$(yq_get_endpoint "$case_id" "$i" ".behavior.responseBody")
+        local fail_code=$(yq_get_endpoint "$case_id" "$i" ".behavior.failResponseCode")
+        local fail_body=$(yq_get_endpoint "$case_id" "$i" ".behavior.failResponseBody")
+        local fail_count=$(yq_get_endpoint "$case_id" "$i" ".behavior.count")
+        
+        endpoint_details="${endpoint_details}  - Endpoint ${i} (port ${port}):
+    Action: ${action}"
+        is_null_or_empty "$resp_code_ep" || endpoint_details="${endpoint_details}
+    ResponseCode: ${resp_code_ep}"
+        is_null_or_empty "$resp_body_ep" || endpoint_details="${endpoint_details}
+    ResponseBody: ${resp_body_ep}"
+        is_null_or_empty "$fail_code" || endpoint_details="${endpoint_details}
+    FailResponseCode: ${fail_code}"
+        is_null_or_empty "$fail_body" || endpoint_details="${endpoint_details}
+    FailResponseBody: ${fail_body}"
+        is_null_or_empty "$fail_count" || endpoint_details="${endpoint_details}
+    FailCount: ${fail_count}"
+        endpoint_details="${endpoint_details}
+
+"
+    done
+    
+    # Get server logs for request details
+    local server_logs=""
+    for container in "${SERVER_CONTAINERS[@]}"; do
+        local container_log
+        container_log=$(docker logs "$container" 2>&1 | tail -20) || true
+        server_logs="${server_logs}=== ${container} ===
+${container_log}
+
+"
+    done
+    
     {
-        echo "=== ${case_id}: ${name} ==="
-        echo "Servers: ${SERVER_CONTAINERS[*]}"
-        echo "Ports: ${SERVER_PORTS[*]}"
-        echo "Callback: ${callback}"
-        echo "Output:"
+        echo "============================================"
+        echo "Test Case: ${case_id}"
+        echo "Name: ${name}"
+        echo "============================================"
+        echo ""
+        echo "=== Expected Results ==="
+        echo "HTTP Code: ${http_code:-any}"
+        echo "Response Code: ${resp_code:-any}"
+        echo "Response Message: ${resp_msg:-any}"
+        echo "Error Contains: ${err_contains:-any}"
+        echo ""
+        echo "=== Server Endpoints ==="
+        if [ -n "$endpoint_details" ]; then
+            echo "$endpoint_details"
+        else
+            echo "No server endpoints (client-only test)"
+        fi
+        echo ""
+        echo "=== Client Execution ==="
+        echo "Callback Addresses: ${callback:-none}"
+        echo ""
+        echo "=== Client Output ==="
         echo "$output"
-        echo "Exit: ${exit_code}"
+        echo ""
+        echo "=== Server Request Logs ==="
+        if [ -n "$server_logs" ]; then
+            echo "$server_logs"
+        else
+            echo "No server logs available"
+        fi
+        echo ""
+        echo "=== Result ==="
+        echo "Exit Code: ${exit_code}"
+        if [ $exit_code -eq 0 ]; then
+            echo "Status: PASS"
+        else
+            echo "Status: FAIL"
+        fi
+        echo "============================================"
     } > "${LOG_DIR}/${case_id}.log"
     
     stop_server_containers
