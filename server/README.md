@@ -23,3 +23,21 @@ docker build -t agw-e2e-server:latest .
 | FAIL_COUNT | Number of failures before success (for fail-after-n) | 1 |
 | FAIL_RESPONSE_CODE | HTTP response code for failure | 500 |
 | FAIL_RESPONSE_BODY | Response body for failure | {"code":500,"msg":"error"} |
+| SUCCESS_RESPONSE_CODE | HTTP response code after fail count reached | 200 |
+| SUCCESS_RESPONSE_BODY | Response body after fail count reached | {"code":0,"msg":"success"} |
+
+## Behavior Types
+
+### success
+Returns the configured success response immediately.
+
+### error
+Returns the configured error response immediately.
+
+### timeout
+Simulates a timeout by delaying response.
+
+### fail-after-n
+Fails for the first N requests, then succeeds. Useful for testing retry logic.
+- First N requests return `FAIL_RESPONSE_CODE` with `FAIL_RESPONSE_BODY`
+- Subsequent requests return `SUCCESS_RESPONSE_CODE` with `SUCCESS_RESPONSE_BODY`

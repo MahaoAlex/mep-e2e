@@ -203,6 +203,15 @@ func loadServerBehavior() *EndpointBehavior {
 		failRespBody = frb
 	}
 
+	successRespCode := 200
+	successRespBody := `{"code":0,"msg":"success","request_id":"default"}`
+	if src := os.Getenv("SUCCESS_RESPONSE_CODE"); src != "" {
+		fmt.Sscanf(src, "%d", &successRespCode)
+	}
+	if srb := os.Getenv("SUCCESS_RESPONSE_BODY"); srb != "" {
+		successRespBody = srb
+	}
+
 	return &EndpointBehavior{
 		Action:              ActionType(action),
 		ResponseCode:        respCode,
@@ -211,8 +220,8 @@ func loadServerBehavior() *EndpointBehavior {
 		FailCount:           failCount,
 		FailResponseCode:    failRespCode,
 		FailResponseBody:    failRespBody,
-		SuccessResponseCode: respCode,
-		SuccessResponseBody: respBody,
+		SuccessResponseCode: successRespCode,
+		SuccessResponseBody: successRespBody,
 	}
 }
 
