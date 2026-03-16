@@ -24,6 +24,41 @@ type RegisterResponse struct {
 	RequestID string `json:"request_id"`
 }
 
+type ValidationResult struct {
+	Pass     bool
+	ErrorMsg string
+}
+
+func validateResult(err error, expectedError, expectedResponseCode string, responseCode int, expectedMsg, responseMsg string) ValidationResult {
+	if err != nil {
+		if expectedError != "" && !strings.Contains(err.Error(), expectedError) {
+			return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Expected error containing '%s', got: %v", expectedError, err)}
+		}
+		if expectedError == "" {
+			return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Unexpected error: %v", err)}
+		}
+		return ValidationResult{Pass: true}
+	}
+
+	if expectedError != "" {
+		return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Expected error containing '%s', but got success", expectedError)}
+	}
+
+	if expectedResponseCode != "" {
+		expectedCode := 0
+		fmt.Sscanf(expectedResponseCode, "%d", &expectedCode)
+		if responseCode != expectedCode {
+			return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Expected response code %d, got %d", expectedCode, responseCode)}
+		}
+	}
+
+	if expectedMsg != "" && responseMsg != expectedMsg {
+		return ValidationResult{Pass: false, ErrorMsg: fmt.Sprintf("Expected message '%s', got '%s'", expectedMsg, responseMsg)}
+	}
+
+	return ValidationResult{Pass: true}
+}
+
 func main() {
 	testCaseID := os.Getenv("TEST_CASE_ID")
 	callbackAddrs := os.Getenv("CALLBACK_ADDRS")
@@ -48,7 +83,6 @@ func main() {
 		log.Fatal("No callback addresses provided")
 	}
 
-	// Determine if this is a client error test (invalid host)
 	clientError := os.Getenv("CLIENT_ERROR") == "true"
 
 	var err error
@@ -56,11 +90,9 @@ func main() {
 	var responseMsg string
 
 	if clientError {
-		// Simulate client error scenario - invalid endpoint
 		_, err = http.Get("http://invalid-host-that-does-not-exist:9999/register")
 		responseCode = 0
 	} else {
-		// Make request to the first endpoint
 		resp, rErr := makeRequest(addrs[0])
 		if rErr != nil {
 			err = rErr
@@ -71,49 +103,17 @@ func main() {
 		}
 	}
 
-	// Validate results
-	pass := true
-	var errorMsg string
+	result := validateResult(err, expectedError, expectedResponseCode, responseCode, expectedMsg, responseMsg)
 
-	if err != nil {
-		// Check if expected error contains in actual error
-		if expectedError != "" && !strings.Contains(err.Error(), expectedError) {
-			pass = false
-			errorMsg = fmt.Sprintf("Expected error containing '%s', got: %v", expectedError, err)
-		} else if expectedError == "" {
-			pass = false
-			errorMsg = fmt.Sprintf("Unexpected error: %v", err)
-		}
-	} else if expectedError != "" {
-		// Expected an error but got success
-		pass = false
-		errorMsg = fmt.Sprintf("Expected error containing '%s', but got success", expectedError)
-	} else {
-		// Validate response codes
-		if expectedResponseCode != "" {
-			expectedCode := 0
-			fmt.Sscanf(expectedResponseCode, "%d", &expectedCode)
-			if responseCode != expectedCode {
-				pass = false
-				errorMsg = fmt.Sprintf("Expected response code %d, got %d", expectedCode, responseCode)
-			}
-		}
-
-		if expectedMsg != "" && responseMsg != expectedMsg {
-			pass = false
-			errorMsg = fmt.Sprintf("Expected message '%s', got '%s'", expectedMsg, responseMsg)
-		}
-	}
-
-	if pass {
+	if result.Pass {
 		log.Printf("TEST PASSED: %s", testCaseID)
 		fmt.Println("PASS")
 		os.Exit(0)
-	} else {
-		log.Printf("TEST FAILED: %s - %s", testCaseID, errorMsg)
-		fmt.Printf("FAIL: %s\n", errorMsg)
-		os.Exit(1)
 	}
+
+	log.Printf("TEST FAILED: %s - %s", testCaseID, result.ErrorMsg)
+	fmt.Printf("FAIL: %s\n", result.ErrorMsg)
+	os.Exit(1)
 }
 
 func makeRequest(addr string) (*RegisterResponse, error) {
