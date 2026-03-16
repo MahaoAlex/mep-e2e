@@ -10,14 +10,14 @@ This project aims to build a complete End-to-End (E2E) test framework for Gatewa
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        run-e2e.sh                               │
+│                       run-agw-e2e.sh                            │
 │                     (Test Entry Script)                         │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Test Strategy File                           │
-│                  (YAML Config File)                             │
+│                        agw-e2e.yaml                             │
+│                    (YAML Config File)                          │
 └─────────────────────────────────────────────────────────────────┘
                               │
           ┌───────────────────┴───────────────────┐
@@ -31,12 +31,12 @@ This project aims to build a complete End-to-End (E2E) test framework for Gatewa
 
 ### 2.2 Component Responsibilities
 
-| Component       | Responsibilities                                                                    |
-| --------------- | ----------------------------------------------------------------------------------- |
-| `run-e2e.sh`    | Parse strategy file, coordinate container lifecycle, execute tests, collect results |
-| `strategy.yaml` | Define test cases, server behaviors, endpoint configurations                        |
-| `client/`       | Test client integrating business code, reusing existing AgentGatewayClient          |
-| `server/`       | Multi-endpoint mock service, returning HTTP responses as configured                 |
+| Component        | Responsibilities                                                                    |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| `run-agw-e2e.sh` | Parse strategy file, coordinate container lifecycle, execute tests, collect results |
+| `agw-e2e.yaml`   | Define test cases, server behaviors, endpoint configurations                        |
+| `client/`        | Test client integrating business code, reusing existing AgentGatewayClient          |
+| `server/`        | Multi-endpoint mock service, returning HTTP responses as configured                 |
 
 ## 3. Test Scenario Design
 
@@ -209,7 +209,7 @@ expected:
 
 > **Note**: RetryPolicy uses global configuration. All test cases share the same policy defined in the business code. This validates the existing business logic without varying policy parameters.
 
-### 4.1 strategy.yaml Structure
+### 4.1 agw-e2e.yaml Structure
 
 ```yaml
 version: "1.0"
@@ -595,10 +595,10 @@ testCases:
 ## 5. File Structure Design
 
 ```
-mep-e2e/
+agw-e2e/
 ├── README.md
-├── run-e2e.sh                  # Main entry script
-├── strategy.yaml              # Test strategy config
+├── run-agw-e2e.sh           # Main entry script
+├── agw-e2e.yaml             # Test strategy config
 ├── client/
 │   ├── Dockerfile
 │   ├── main.go                # Client entry
@@ -622,17 +622,20 @@ mep-e2e/
         └── config.go
 ```
 
+> **Note**: Both `client/Dockerfile` and `server/Dockerfile` must be provided. The client Dockerfile should include the business code (or mock), while the server Dockerfile should include the mock HTTP service.
+
 ## 6. Core Implementation
 
-### 6.1 run-e2e.sh Script
+### 6.1 run-agw-e2e.sh Script
 
 **Responsibilities**:
 
-1. Parse `strategy.yaml` config
-2. Build and start server containers based on test case config
-3. Build and start client containers
-4. Collect test results
-5. Cleanup resources
+1. Parse `agw-e2e.yaml` config
+2. **Pre-build Docker images** (client & server) - built once before all tests
+3. For each test case: start server container with specific behavior config
+4. Start client container and execute test
+5. Collect test results (logs, metrics)
+6. Cleanup containers and resources
 
 **Core Flow**:
 
@@ -642,27 +645,109 @@ mep-e2e/
 # 1. Parse strategy file
 parse_strategy() { ... }
 
-# 2. Start server
+# 2. Pre-build Docker images (once before all tests)
+build_images() {
+    echo "Building Docker images..."
+    docker build -t agw-e2e-server:latest ./server
+    docker build -t agw-e2e-client:latest ./client
+    echo "Docker images built successfully"
+}
+
+# 3. Start server for a test case
 start_server() {
-    docker build -t e2e-server:latest ./server
     docker run -d --name e2e-server-${case_id} \
         -p ${port}:${port} \
         -e BEHAVIOR_TYPE=${behavior} \
         -e RESPONSE_CODE=${response_code} \
-        e2e-server:latest
+        agw-e2e-server:latest
 }
 
-# 3. Start client
+# 4. Start client and run test
 start_client() {
-    docker build -t e2e-client:latest ./client
     docker run --rm \
         -e TEST_CASE_ID=${case_id} \
         -e CALLBACK_ADDRS=${callback_addrs} \
-        e2e-client:latest
+        agw-e2e-client:latest
 }
 
-# 4. Execute test and collect results
+# 5. Execute test and collect results
 run_test() { ... }
+
+# Main execution flow
+main() {
+    # Step 1: Build images once
+    build_images
+
+    # Step 2: Run test cases (in parallel or sequential)
+    for case in ${test_cases}; do
+        start_server
+        start_client
+        collect_results
+        cleanup
+    done
+}
+```
+
+**Image Build Strategy**:
+
+- **Pre-build**: Images are built once before running any test cases (not per-test)
+- **Image naming**: `agw-e2e-server:latest`, `agw-e2e-client:latest`
+- **Build location**: `./server/Dockerfile`, `./client/Dockerfile`
+- **Caching**: Use Docker layer caching for faster rebuilds (only rebuild if source code changes)
+
+### Container Management (Idempotent Execution)
+
+To ensure the script can be run multiple times safely (re-entrant), the following mechanisms are implemented:
+
+**1. Container Naming Strategy**:
+
+```bash
+# Unique container name per test case + worker ID
+CONTAINER_NAME_SERVER="agw-e2e-server-${TEST_CASE_ID}-${WORKER_ID}"
+CONTAINER_NAME_CLIENT="agw-e2e-client-${TEST_CASE_ID}-${WORKER_ID}"
+```
+
+**2. Cleanup on Startup**:
+
+```bash
+# Cleanup function - remove any residual containers before starting
+cleanup_residual() {
+    # Remove any orphaned containers from previous runs
+    docker rm -f agw-e2e-server-${TEST_CASE_ID}-* 2>/dev/null || true
+    docker rm -f agw-e2e-client-${TEST_CASE_ID}-* 2>/dev/null || true
+
+    # Cleanup unused networks/volumes if needed
+    docker network prune -f 2>/dev/null || true
+}
+```
+
+**3. Port Allocation** (for parallel execution):
+
+```bash
+# Each worker uses unique port to avoid conflicts
+BASE_PORT=8000
+SERVER_PORT=$((BASE_PORT + WORKER_ID * 2))      # e.g., 8000, 8002, 8004
+SERVER_PORT_2=$((BASE_PORT + WORKER_ID * 2 + 1)) # e.g., 8001, 8003, 8005
+```
+
+**4. Parallel Execution Safety**:
+
+- Max parallel workers: `--parallel` flag (default: 4)
+- Each worker gets unique worker ID (0, 1, 2, 3...)
+- Each worker uses unique ports and container names
+- Results aggregated after all workers complete
+
+**5. Full Cleanup After Execution**:
+
+```bash
+# Final cleanup after all tests complete
+final_cleanup() {
+    docker rm -f $(docker ps -aq --filter "name=agw-e2e-*") 2>/dev/null || true
+    # Optional: docker rmi agw-e2e-server:latest agw-e2e-client:latest
+}
+
+# Manual cleanup can also be triggered via CLI:
+# ./run-agw-e2e.sh --cleanup
 ```
 
 ### 6.2 Server Mock Implementation
@@ -756,20 +841,37 @@ func newGatewayClient(callbackAddrs string) gateway.Client {
 ### 7.1 Single Test Case Execution
 
 ```bash
-./run-e2e.sh --case E2E-001
+./run-agw-e2e.sh --case E2E-001
 ```
 
 ### 7.2 Full Test Suite Execution
 
 ```bash
-./run-e2e.sh --all
+./run-agw-e2e.sh --all
 ```
 
-### 7.3 Output Example
+### 7.3 Manual Cleanup (for residual resources)
+
+```bash
+# Cleanup all E2E test containers
+./run-agw-e2e.sh --cleanup
+
+# Cleanup specific test case containers
+./run-agw-e2e.sh --cleanup --case E2E-001
+```
+
+**Cleanup Options**:
+| Option | Description |
+|--------|-------------|
+| `--cleanup` | Remove all containers, networks, and volumes related to E2E tests |
+| `--cleanup --case <id>` | Remove containers for a specific test case |
+| `--cleanup --images` | Additionally remove built Docker images |
+
+### 7.4 Output Example
 
 ```
 ========================================
-E2E Test Suite - mep-e2e
+E2E Test Suite - agw-e2e
 ========================================
 
 [E2E-001] First endpoint success on first try ....... PASS
@@ -815,6 +917,3 @@ Total: 10 | Passed: 10 | Failed: 0
 5. **CI integration**: Not required for now - will be manually integrated later
 
 ---
-
-Please confirm if the above proposal meets your expectations. Once confirmed, I will proceed with implementation.
-
