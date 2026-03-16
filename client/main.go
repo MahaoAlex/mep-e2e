@@ -117,7 +117,7 @@ func main() {
 }
 
 func makeRequest(addr string) (*RegisterResponse, error) {
-	url := fmt.Sprintf("http://%s/register", strings.TrimSpace(addr))
+	url := fmt.Sprintf("http://%s/v3/api/sandbox/register", strings.TrimSpace(addr))
 
 	reqBody := RegisterRequest{
 		SandboxID:         "test-sandbox-001",
