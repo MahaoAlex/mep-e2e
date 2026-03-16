@@ -291,8 +291,8 @@ run_test_case() {
     local client_env="-e TEST_CASE_ID=$case_id"
     is_null_or_empty "$http_code"    || client_env="$client_env -e EXPECTED_HTTP_CODE=$http_code"
     is_null_or_empty "$resp_code"    || client_env="$client_env -e EXPECTED_RESPONSE_CODE=$resp_code"
-    is_null_or_empty "$resp_msg"     || client_env="$client_env -e EXPECTED_MSG='$resp_msg'"
-    is_null_or_empty "$err_contains" || client_env="$client_env -e EXPECTED_ERROR='$err_contains'"
+    is_null_or_empty "$resp_msg"     || client_env="$client_env -e EXPECTED_MSG=$resp_msg"
+    is_null_or_empty "$err_contains" || client_env="$client_env -e EXPECTED_ERROR=$err_contains"
     
     while IFS= read -r env_line; do
         is_null_or_empty "$env_line" || client_env="$client_env -e $env_line"
