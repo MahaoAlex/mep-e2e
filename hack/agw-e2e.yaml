@@ -1,0 +1,262 @@
+version: "1.0"
+
+# Global config
+config:
+  timeout: 60s            # Maximum execution time for a single test case
+  logLevel: debug        # Logging level: debug, info, warn, error
+
+# Global RetryPolicy (applied to all test cases)
+# Based on business code: getRegisterEndpointGroup
+retryPolicy:
+  # Primary endpoint (index 0)
+  primary:
+    maxAttempts: 2      # 2 attempts (1 initial + 1 retry)
+    timeout: 5s          # HTTP request timeout for primary endpoint
+    interval: 0         # no backoff interval
+  
+  # Backup endpoints (index > 0)
+  backup:
+    maxAttempts: 1      # 1 attempt (no retry)
+    timeout: 5s         # HTTP request timeout for backup endpoints
+    interval: 0
+
+# Test case list
+testCases:
+  # E2E-001: First endpoint succeeds on first try
+  - id: "E2E-001"
+    name: "First endpoint success on first try"
+    enabled: true
+    expected:
+      httpCode: 200
+      responseCode: 0
+      responseMsg: "success"
+    client:
+      image: "agw-e2e-client:latest"
+      env:
+        - TEST_CASE_ID=E2E-001
+        - CALLBACK_ADDRS=mock-server-1:8080
+    server:
+      endpoints:
+        - id: "mock-server-1"
+          port: 8080
+          behavior:
+            action: "success"
+            responseCode: 200
+            responseBody: '{"code":0,"msg":"success","request_id":"test-001"}'
+
+  # E2E-002: First endpoint fails then retries successfully
+  - id: "E2E-002"
+    name: "First endpoint fails then retries successfully"
+    enabled: true
+    expected:
+      httpCode: 200
+      responseCode: 0
+      responseMsg: "success"
+    client:
+      image: "agw-e2e-client:latest"
+      env:
+        - TEST_CASE_ID=E2E-002
+        - CALLBACK_ADDRS=mock-server-1:8080
+    server:
+      endpoints:
+        - id: "mock-server-1"
+          port: 8080
+          behavior:
+            action: "fail-after-n"
+            count: 1
+            failResponseCode: 503
+            failResponseBody: '{"code":503,"msg":"service unavailable","request_id":"test-002"}'
+            successResponseCode: 200
+            successResponseBody: '{"code":0,"msg":"success","request_id":"test-002"}'
+
+  # E2E-003: Failover to second endpoint succeeds
+  - id: "E2E-003"
+    name: "Failover to second endpoint succeeds"
+    enabled: true
+    expected:
+      httpCode: 200
+      responseCode: 0
+      responseMsg: "success"
+    client:
+      image: "agw-e2e-client:latest"
+      env:
+        - TEST_CASE_ID=E2E-003
+        - CALLBACK_ADDRS=mock-server-1:8080,mock-server-2:8081
+    server:
+      endpoints:
+        - id: "mock-server-1"
+          port: 8080
+          behavior:
+            action: "fail-after-n"
+            count: 2
+            failResponseCode: 500
+            failResponseBody: '{"code":500,"msg":"internal error","request_id":"test-003"}'
+        - id: "mock-server-2"
+          port: 8081
+          behavior:
+            action: "success"
+            responseCode: 200
+            responseBody: '{"code":0,"msg":"success","request_id":"test-003"}'
+
+  # E2E-004: Both endpoints return errors
+  - id: "E2E-004"
+    name: "Both endpoints return errors"
+    enabled: true
+    expected:
+      httpCode: 404
+      responseCode: 404
+      responseMsg: "not found"
+    client:
+      image: "agw-e2e-client:latest"
+      env:
+        - TEST_CASE_ID=E2E-004
+        - CALLBACK_ADDRS=mock-server-1:8080,mock-server-2:8081
+    server:
+      endpoints:
+        - id: "mock-server-1"
+          port: 8080
+          behavior:
+            action: "error"
+            responseCode: 500
+            responseBody: '{"code":500,"msg":"internal server error","request_id":"test-004"}'
+        - id: "mock-server-2"
+          port: 8081
+          behavior:
+            action: "error"
+            responseCode: 404
+            responseBody: '{"code":404,"msg":"not found","request_id":"test-004"}'
+
+  # E2E-005: All endpoints timeout
+  - id: "E2E-005"
+    name: "All endpoints timeout"
+    enabled: true
+    expected:
+      httpCode: 0
+      errorContains: "timeout"
+    client:
+      image: "agw-e2e-client:latest"
+      env:
+        - TEST_CASE_ID=E2E-005
+        - CALLBACK_ADDRS=mock-server-1:8080,mock-server-2:8081
+    server:
+      endpoints:
+        - id: "mock-server-1"
+          port: 8080
+          behavior:
+            action: "timeout"
+            delay: 10000
+        - id: "mock-server-2"
+          port: 8081
+          behavior:
+            action: "timeout"
+            delay: 10000
+
+  # E2E-006: 429 retry then success
+  - id: "E2E-006"
+    name: "First endpoint returns 429 then retries successfully"
+    enabled: true
+    expected:
+      httpCode: 200
+      responseCode: 0
+      responseMsg: "success"
+    client:
+      image: "agw-e2e-client:latest"
+      env:
+        - TEST_CASE_ID=E2E-006
+        - CALLBACK_ADDRS=mock-server-1:8080
+    server:
+      endpoints:
+        - id: "mock-server-1"
+          port: 8080
+          behavior:
+            action: "fail-after-n"
+            count: 1
+            failResponseCode: 429
+            failResponseBody: '{"code":429,"msg":"too many requests","request_id":"test-006"}'
+            successResponseCode: 200
+            successResponseBody: '{"code":0,"msg":"success","request_id":"test-006"}'
+
+  # E2E-007: 408 retry then success
+  - id: "E2E-007"
+    name: "First endpoint returns 408 then retries successfully"
+    enabled: true
+    expected:
+      httpCode: 200
+      responseCode: 0
+      responseMsg: "success"
+    client:
+      image: "agw-e2e-client:latest"
+      env:
+        - TEST_CASE_ID=E2E-007
+        - CALLBACK_ADDRS=mock-server-1:8080
+    server:
+      endpoints:
+        - id: "mock-server-1"
+          port: 8080
+          behavior:
+            action: "fail-after-n"
+            count: 1
+            failResponseCode: 408
+            failResponseBody: '{"code":408,"msg":"request timeout","request_id":"test-007"}'
+            successResponseCode: 200
+            successResponseBody: '{"code":0,"msg":"success","request_id":"test-007"}'
+
+  # E2E-008: 400 no retry
+  - id: "E2E-008"
+    name: "First endpoint returns 400 no retry"
+    enabled: true
+    expected:
+      httpCode: 400
+      responseCode: 400
+      responseMsg: "bad request"
+    client:
+      image: "agw-e2e-client:latest"
+      env:
+        - TEST_CASE_ID=E2E-008
+        - CALLBACK_ADDRS=mock-server-1:8080
+    server:
+      endpoints:
+        - id: "mock-server-1"
+          port: 8080
+          behavior:
+            action: "error"
+            responseCode: 400
+            responseBody: '{"code":400,"msg":"bad request","request_id":"test-008"}'
+
+  # E2E-009: 401 no retry
+  - id: "E2E-009"
+    name: "First endpoint returns 401 no retry"
+    enabled: true
+    expected:
+      httpCode: 401
+      responseCode: 401
+      responseMsg: "unauthorized"
+    client:
+      image: "agw-e2e-client:latest"
+      env:
+        - TEST_CASE_ID=E2E-009
+        - CALLBACK_ADDRS=mock-server-1:8080
+    server:
+      endpoints:
+        - id: "mock-server-1"
+          port: 8080
+          behavior:
+            action: "error"
+            responseCode: 401
+            responseBody: '{"code":401,"msg":"unauthorized","request_id":"test-009"}'
+
+  # E2E-010: Client config error causes timeout
+  - id: "E2E-010"
+    name: "Client config error causes timeout no retry"
+    enabled: true
+    expected:
+      httpCode: 0
+      errorContains: "connection refused"
+    client:
+      image: "agw-e2e-client:latest"
+      env:
+        - TEST_CASE_ID=E2E-010
+        - CALLBACK_ADDRS=invalid-host:9999
+        - CLIENT_ERROR=true
+    server:
+      endpoints: []
