@@ -31,29 +31,29 @@ This project aims to build a complete End-to-End (E2E) test framework for Gatewa
 
 ### 2.2 Component Responsibilities
 
-| Component | Responsibilities |
-|-----------|------------------|
-| `run-e2e.sh` | Parse strategy file, coordinate container lifecycle, execute tests, collect results |
-| `strategy.yaml` | Define test cases, server behaviors, endpoint configurations |
-| `client/` | Test client integrating business code, reusing existing AgentGatewayClient |
-| `server/` | Multi-endpoint mock service, returning HTTP responses as configured |
+| Component       | Responsibilities                                                                    |
+| --------------- | ----------------------------------------------------------------------------------- |
+| `run-e2e.sh`    | Parse strategy file, coordinate container lifecycle, execute tests, collect results |
+| `strategy.yaml` | Define test cases, server behaviors, endpoint configurations                        |
+| `client/`       | Test client integrating business code, reusing existing AgentGatewayClient          |
+| `server/`       | Multi-endpoint mock service, returning HTTP responses as configured                 |
 
 ## 3. Test Scenario Design
 
 ### 3.1 Scenario Matrix
 
-| Scenario ID | Scenario Description | Expected Result |
-|-------------|---------------------|-----------------|
-| E2E-001 | First endpoint succeeds on first request | Returns 200 + correct response body |
-| E2E-002 | First request fails, retry succeeds | Returns 200 + correct response body |
-| E2E-003 | First endpoint fails twice, failover to second succeeds | Returns 200 + correct response body |
-| E2E-004 | First returns 500, second returns 404 | Returns last received error response |
-| E2E-005 | All endpoints timeout | Returns timeout error |
-| E2E-006 | First returns 429, retry succeeds | Returns 200 + correct response body |
-| E2E-007 | First returns 408, retry succeeds | Returns 200 + correct response body |
-| E2E-008 | First returns 400, no retry | Returns 400 error |
-| E2E-009 | First returns 401, no retry | Returns 401 error |
-| E2E-010 | Client config error causes timeout, no retry | Returns timeout error |
+| Scenario ID | Scenario Description                                    | Expected Result                      |
+| ----------- | ------------------------------------------------------- | ------------------------------------ |
+| E2E-001     | First endpoint succeeds on first request                | Returns 200 + correct response body  |
+| E2E-002     | First request fails, retry succeeds                     | Returns 200 + correct response body  |
+| E2E-003     | First endpoint fails twice, failover to second succeeds | Returns 200 + correct response body  |
+| E2E-004     | First returns 500, second returns 404                   | Returns last received error response |
+| E2E-005     | All endpoints timeout                                   | Returns timeout error                |
+| E2E-006     | First returns 429, retry succeeds                       | Returns 200 + correct response body  |
+| E2E-007     | First returns 408, retry succeeds                       | Returns 200 + correct response body  |
+| E2E-008     | First returns 400, no retry                             | Returns 400 error                    |
+| E2E-009     | First returns 401, no retry                             | Returns 401 error                    |
+| E2E-010     | Client config error causes timeout, no retry            | Returns timeout error                |
 
 ### 3.2 Retry Logic Verification
 
@@ -150,21 +150,21 @@ UnifiedUnexpectErrorCode   = 1  // Unexpected error code
 
 ### Error Code Mapping
 
-| Error Type | UnifiedErrorCode | UnifiedErrorDetail |
-|------------|------------------|-------------------|
-| `ErrorTypeClientConfig` | 0 | Specific network errors, timeout info |
-| `ErrorTypeClientNetwork` | 0 | Network connection errors |
-| `ErrorTypeClientTimeout` | 0 | "request timed out" |
-| `ErrorTypeServer4xx` | HTTP status (e.g., 400, 401, 404) | Server response body |
-| `ErrorTypeServer5xx` | HTTP status (e.g., 500, 503) | Server response body |
-| `ErrorTypeUnexpectedError` | 1 | Unexpected error message |
+| Error Type                 | UnifiedErrorCode                  | UnifiedErrorDetail                    |
+| -------------------------- | --------------------------------- | ------------------------------------- |
+| `ErrorTypeClientConfig`    | 0                                 | Specific network errors, timeout info |
+| `ErrorTypeClientNetwork`   | 0                                 | Network connection errors             |
+| `ErrorTypeClientTimeout`   | 0                                 | "request timed out"                   |
+| `ErrorTypeServer4xx`       | HTTP status (e.g., 400, 401, 404) | Server response body                  |
+| `ErrorTypeServer5xx`       | HTTP status (e.g., 500, 503)      | Server response body                  |
+| `ErrorTypeUnexpectedError` | 1                                 | Unexpected error message              |
 
 ### MultiEndpointError Error Message Format
 
 ```go
 func (e *MultiEndpointError) Error() string {
     last := e.AttemptErrors[len(e.AttemptErrors)-1]
-    
+
     switch last.ErrorType {
     case ErrorTypeClientConfig:
         msg = "client configuration error: " + last.UnifiedErrorDetail
@@ -179,7 +179,7 @@ func (e *MultiEndpointError) Error() string {
     default:
         msg = fmt.Sprintf("unhandled error type [%s]: %s", last.ErrorType, last.UnifiedErrorDetail)
     }
-    
+
     return fmt.Sprintf("%s (total attempts: %d, group: %s)", msg, e.TotalAttempts, e.GroupName)
 }
 ```
@@ -207,7 +207,7 @@ expected:
 
 ## 4. Strategy File Design
 
-> **Note**: RetryPolicy uses global configuration (Option A). All test cases share the same policy defined in the business code (`getRegisterEndpointGroup`). This validates the existing business logic without varying policy parameters.
+> **Note**: RetryPolicy uses global configuration. All test cases share the same policy defined in the business code. This validates the existing business logic without varying policy parameters.
 
 ### 4.1 strategy.yaml Structure
 
@@ -216,22 +216,22 @@ version: "1.0"
 
 # Global config
 config:
-  timeout: 30s
-  logLevel: debug
+  timeout: 60s # Maximum execution time for a single test case (includes container startup, request/response, etc.)
+  logLevel: debug # Logging level: debug, info, warn, error
 
 # Global RetryPolicy (applied to all test cases)
 # Based on business code: getRegisterEndpointGroup
 retryPolicy:
   # Primary endpoint (index 0)
   primary:
-    maxAttempts: 2      # 2 attempts (1 initial + 1 retry)
-    timeout: 5s          # 5 seconds per request
-    interval: 0         # no backoff interval
-  
+    maxAttempts: 2 # 2 attempts (1 initial + 1 retry)
+    timeout: 5s # HTTP request timeout for primary endpoint (5 seconds per request)
+    interval: 0 # no backoff interval
+
   # Backup endpoints (index > 0)
   backup:
-    maxAttempts: 1      # 1 attempt (no retry)
-    timeout: 5s
+    maxAttempts: 1 # 1 attempt (no retry)
+    timeout: 5s # HTTP request timeout for backup endpoints
     interval: 0
 
 # Test case list
@@ -240,13 +240,13 @@ testCases:
     name: "First endpoint success on first try"
     description: "Verify first endpoint succeeds on first request"
     enabled: true
-    
+
     # Expected result (for test validation)
     expected:
       httpCode: 200
       responseCode: 0
       responseMsg: "success"
-    
+
     # Client config
     client:
       image: "client:latest"
@@ -254,7 +254,7 @@ testCases:
         - TEST_CASE_ID=E2E-001
         - GATEWAY_DOMAIN=server-1:8080
         - CALLBACK_ADDRS=server-1:8080
-    
+
     # Server config
     server:
       endpoints:
@@ -274,13 +274,14 @@ Each test case defines `expected` results to validate:
 
 ```yaml
 expected:
-  httpCode: 200          # Expected HTTP status code
-  responseCode: 0        # Expected business response code
+  httpCode: 200 # Expected HTTP status code
+  responseCode: 0 # Expected business response code
   responseMsg: "success" # Expected response message
-  errorContains: ""      # Optional: expected error substring (for error cases)
+  errorContains: "" # Optional: expected error substring (for error cases)
 ```
 
 **Success Case Example (E2E-001)**:
+
 ```yaml
 expected:
   httpCode: 200
@@ -289,17 +290,19 @@ expected:
 ```
 
 **Error Case Example (E2E-004 - Both endpoints return errors)**:
+
 ```yaml
 expected:
-  httpCode: 404          # Last endpoint returns 404
+  httpCode: 404 # Last endpoint returns 404
   responseCode: 404
   responseMsg: "not found"
 ```
 
 **Timeout Case Example (E2E-005)**:
+
 ```yaml
 expected:
-  httpCode: 0            # 0 indicates timeout/connection error
+  httpCode: 0 # 0 indicates timeout/connection error
   errorContains: "timeout" # Match error message contains "timeout"
 ```
 
@@ -307,12 +310,12 @@ expected:
 
 Server supports the following behavior types:
 
-| Type | Description | Parameters |
-|------|--------------|------------|
-| `success` | Return success response | `responseCode`, `responseBody`, `delay` |
-| `error` | Return error response | `responseCode`, `responseBody` |
-| `timeout` | Simulate timeout | `delay` (exceeds client timeout) |
-| `fail-after-n` | First N requests fail, then succeed | `count`, `failResponseCode` |
+| Type           | Description                         | Parameters                              |
+| -------------- | ----------------------------------- | --------------------------------------- |
+| `success`      | Return success response             | `responseCode`, `responseBody`, `delay` |
+| `error`        | Return error response               | `responseCode`, `responseBody`          |
+| `timeout`      | Simulate timeout                    | `delay` (exceeds client timeout)        |
+| `fail-after-n` | First N requests fail, then succeed | `count`, `failResponseCode`             |
 
 ### 4.4 Test Case Configuration Examples
 
@@ -320,7 +323,16 @@ Server supports the following behavior types:
 version: "1.0"
 
 config:
-  timeout: 60s
+  timeout: 60s # Maximum execution time for a single test case
+  logLevel: debug
+
+retryPolicy:
+  primary:
+    maxAttempts: 2
+    timeout: 5s
+  backup:
+    maxAttempts: 1
+    timeout: 5s
 
 testCases:
   # E2E-001: First endpoint succeeds on first try
@@ -567,18 +579,18 @@ testCases:
 
 > **Note**: All test cases use the global RetryPolicy (primary: 2 attempts, 5s timeout; backup: 1 attempt, 5s timeout).
 
-| ID | Test Name | Expected Result | Server Endpoint Behavior | Description |
-|----|-----------|-----------------|-------------------------|-------------|
-| E2E-001 | First endpoint success on first try | httpCode: 200, responseCode: 0, msg: "success" | `action: success` | Verify first endpoint succeeds on first request |
-| E2E-002 | First endpoint fails then retries successfully | httpCode: 200, responseCode: 0, msg: "success" | `action: fail-after-n, count: 1` | First request returns 503, retry succeeds |
-| E2E-003 | Failover to second endpoint succeeds | httpCode: 200, responseCode: 0, msg: "success" | Endpoint1: `fail-after-n, count: 2`<br>Endpoint2: `action: success` | Primary fails twice, failover to backup succeeds |
-| E2E-004 | Both endpoints return errors | httpCode: 404, responseCode: 404, msg: "not found" | Endpoint1: `action: error, responseCode: 500`<br>Endpoint2: `action: error, responseCode: 404` | First returns 500, second returns 404 |
-| E2E-005 | All endpoints timeout | httpCode: 0, errorContains: "timeout" | Endpoint1: `action: timeout, delay: 10000`<br>Endpoint2: `action: timeout, delay: 10000` | All endpoints timeout, no response |
-| E2E-006 | 429 retry then success | httpCode: 200, responseCode: 0, msg: "success" | `action: fail-after-n, count: 1, failResponseCode: 429` | First returns 429 (retryable), retry succeeds |
-| E2E-007 | 408 retry then success | httpCode: 200, responseCode: 0, msg: "success" | `action: fail-after-n, count: 1, failResponseCode: 408` | First returns 408 (retryable), retry succeeds |
-| E2E-008 | 400 no retry | httpCode: 400, responseCode: 400, msg: "bad request" | `action: error, responseCode: 400` | 4xx error not retried on same endpoint |
-| E2E-009 | 401 no retry | httpCode: 401, responseCode: 401, msg: "unauthorized" | `action: error, responseCode: 401` | 4xx error not retried on same endpoint |
-| E2E-010 | Client config error causes timeout | httpCode: 0, errorContains: "connection refused" | No server endpoints | Invalid host causes connection error, no retry |
+| ID      | Test Name                                      | Expected Result                                       | Server Endpoint Behavior                                                                       | Description                                      |
+| ------- | ---------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| E2E-001 | First endpoint success on first try            | httpCode: 200, responseCode: 0, msg: "success"        | `action: success`                                                                              | Verify first endpoint succeeds on first request  |
+| E2E-002 | First endpoint fails then retries successfully | httpCode: 200, responseCode: 0, msg: "success"        | `action: fail-after-n, count: 1`                                                               | First request returns 503, retry succeeds        |
+| E2E-003 | Failover to second endpoint succeeds           | httpCode: 200, responseCode: 0, msg: "success"        | Endpoint1: `fail-after-n, count: 2`<br>Endpoint2: `action: success`                            | Primary fails twice, failover to backup succeeds |
+| E2E-004 | Both endpoints return errors                   | httpCode: 404, responseCode: 404, msg: "not found"    | Endpoint1: `action: error, responseCode: 500`<br>Endpoint2: `action: error, responseCode: 404` | First returns 500, second returns 404            |
+| E2E-005 | All endpoints timeout                          | httpCode: 0, errorContains: "timeout"                 | Endpoint1: `action: timeout, delay: 10000`<br>Endpoint2: `action: timeout, delay: 10000`       | All endpoints timeout, no response               |
+| E2E-006 | 429 retry then success                         | httpCode: 200, responseCode: 0, msg: "success"        | `action: fail-after-n, count: 1, failResponseCode: 429`                                        | First returns 429 (retryable), retry succeeds    |
+| E2E-007 | 408 retry then success                         | httpCode: 200, responseCode: 0, msg: "success"        | `action: fail-after-n, count: 1, failResponseCode: 408`                                        | First returns 408 (retryable), retry succeeds    |
+| E2E-008 | 400 no retry                                   | httpCode: 400, responseCode: 400, msg: "bad request"  | `action: error, responseCode: 400`                                                             | 4xx error not retried on same endpoint           |
+| E2E-009 | 401 no retry                                   | httpCode: 401, responseCode: 401, msg: "unauthorized" | `action: error, responseCode: 401`                                                             | 4xx error not retried on same endpoint           |
+| E2E-010 | Client config error causes timeout             | httpCode: 0, errorContains: "connection refused"      | No server endpoints                                                                            | Invalid host causes connection error, no retry   |
 
 ## 5. File Structure Design
 
@@ -615,6 +627,7 @@ mep-e2e/
 ### 6.1 run-e2e.sh Script
 
 **Responsibilities**:
+
 1. Parse `strategy.yaml` config
 2. Build and start server containers based on test case config
 3. Build and start client containers
@@ -707,7 +720,7 @@ func (c *RequestCounter) Get() int {
 func main() {
     testCaseID := os.Getenv("TEST_CASE_ID")
     callbackAddrs := os.Getenv("CALLBACK_ADDRS")
-    
+
     // Execute corresponding test based on TEST_CASE_ID
     switch testCaseID {
     case "E2E-001":
@@ -724,11 +737,11 @@ func main() {
 ```go
 func newGatewayClient(callbackAddrs string) gateway.Client {
     addrs := strings.Split(callbackAddrs, ",")
-    
+
     config := gateway.TLSConfig{
         InsecureSkipVerify: true,
     }
-    
+
     return gateway.NewClientWithMultiEndpoints(
         config,
         addrs[0],  // first address as primary
@@ -804,3 +817,4 @@ Total: 10 | Passed: 10 | Failed: 0
 ---
 
 Please confirm if the above proposal meets your expectations. Once confirmed, I will proceed with implementation.
+
