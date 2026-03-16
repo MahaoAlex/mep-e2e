@@ -173,7 +173,7 @@ parse_endpoint_env() {
     local idx="$2"
     local port="$3"
     
-    local env="-e TEST_CASE_ID=${case_id} -e SERVER_PORT_1=${port}"
+    local env="-e TEST_CASE_ID=${case_id}"
     
     local action=$(yq_get_endpoint "$case_id" "$idx" ".behavior.action")
     local resp_code=$(yq_get_endpoint "$case_id" "$idx" ".behavior.responseCode")
