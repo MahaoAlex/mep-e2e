@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STRATEGY_FILE="${SCRIPT_DIR}/agw-e2e.yaml"
 LOG_DIR="${SCRIPT_DIR}/logs"
 REPORT_DIR="${SCRIPT_DIR}/reports"
+CERT_DIR="${SCRIPT_DIR}/certs"
 
 PARALLEL_WORKERS=4
 LOG_LEVEL="debug"
@@ -22,9 +23,13 @@ NC='\033[0m'
 declare -a SERVER_CONTAINERS
 declare -a SERVER_PORTS
 
-# Check yq availability once
 YQ_AVAILABLE=false
 command -v yq &> /dev/null && YQ_AVAILABLE=true
+
+CERT_CA_CERT="${CERT_DIR}/ca.crt"
+CERT_CA_KEY="${CERT_DIR}/ca.key"
+CERT_SERVER_CERT="${CERT_DIR}/server.crt"
+CERT_SERVER_KEY="${CERT_DIR}/server.key"
 
 # =============================================================================
 # Logging
@@ -33,6 +38,61 @@ command -v yq &> /dev/null && YQ_AVAILABLE=true
 log_info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+# =============================================================================
+# Certificate Management
+# =============================================================================
+
+generate_test_certs() {
+    mkdir -p "${CERT_DIR}"
+    
+    if [ -f "${CERT_SERVER_CERT}" ] && [ -f "${CERT_SERVER_KEY}" ]; then
+        log_info "Test certificates already exist, skipping generation"
+        return 0
+    fi
+    
+    log_info "Generating test certificates..."
+    
+    openssl genrsa -out "${CERT_CA_KEY}" 2048 2>/dev/null
+    openssl req -new -x509 -days 365 -key "${CERT_CA_KEY}" -out "${CERT_CA_CERT}" \
+        -subj "/CN=E2E-Test-CA/O=Test/C=US" 2>/dev/null
+    
+    openssl genrsa -out "${CERT_SERVER_KEY}" 2048 2>/dev/null
+    
+    openssl req -new -key "${CERT_SERVER_KEY}" -out "${CERT_DIR}/server.csr" \
+        -subj "/CN=localhost/O=Test/C=US" 2>/dev/null
+    
+    cat > "${CERT_DIR}/server.ext" <<EOF
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+DNS.2 = *.localhost
+IP.1 = 127.0.0.1
+EOF
+    
+    openssl x509 -req -days 365 -in "${CERT_DIR}/server.csr" -CA "${CERT_CA_CERT}" \
+        -CAkey "${CERT_CA_KEY}" -CAcreateserial -out "${CERT_SERVER_CERT}" \
+        -extfile "${CERT_DIR}/server.ext" 2>/dev/null
+    
+    rm -f "${CERT_DIR}/server.csr" "${CERT_DIR}/server.ext" "${CERT_DIR}/ca.srl"
+    
+    chmod 644 "${CERT_CA_CERT}" "${CERT_SERVER_CERT}"
+    chmod 600 "${CERT_CA_KEY}" "${CERT_SERVER_KEY}"
+    
+    log_info "Test certificates generated: ${CERT_DIR}"
+}
+
+cleanup_test_certs() {
+    if [ -d "${CERT_DIR}" ]; then
+        log_info "Cleaning up test certificates..."
+        rm -rf "${CERT_DIR}"
+    fi
+}
 
 # =============================================================================
 # CLI
@@ -202,14 +262,20 @@ start_single_server() {
     is_null_or_empty "$succ_code"   || env_args+=(-e "SUCCESS_RESPONSE_CODE=$succ_code")
     is_null_or_empty "$succ_body"   || env_args+=(-e "SUCCESS_RESPONSE_BODY=$succ_body")
     
-    docker run -d --name "$container" --network host "${env_args[@]}" agw-e2e-server:latest > /dev/null 2>&1 || {
+    env_args+=(-e "ENABLE_HTTPS=true")
+    env_args+=(-e "CERT_FILE=/certs/server.crt")
+    env_args+=(-e "KEY_FILE=/certs/server.key")
+    
+    docker run -d --name "$container" --network host \
+        -v "${CERT_DIR}:/certs:ro" \
+        "${env_args[@]}" agw-e2e-server:latest > /dev/null 2>&1 || {
         log_error "Failed to start: ${container}"
         return 1
     }
     
     SERVER_CONTAINERS+=("$container")
     SERVER_PORTS+=("$port")
-    log_info "Started server: ${container} on port ${port}"
+    log_info "Started server: ${container} on port ${port} (HTTPS)"
 }
 
 start_server_containers() {
@@ -261,10 +327,17 @@ run_client() {
     
     local container="agw-e2e-client-${case_id}"
     
+    env_args+=(-e "ENABLE_HTTPS=true")
+    env_args+=(-e "CA_CERT_FILE=/certs/ca.crt")
+    
     if [ -n "$callback" ]; then
-        docker run --rm --name "$container" --network host "${env_args[@]}" -e "CALLBACK_ADDRS=$callback" agw-e2e-client:latest 2>&1
+        docker run --rm --name "$container" --network host \
+            -v "${CERT_DIR}:/certs:ro" \
+            "${env_args[@]}" -e "CALLBACK_ADDRS=$callback" agw-e2e-client:latest 2>&1
     else
-        docker run --rm --name "$container" --network host "${env_args[@]}" agw-e2e-client:latest 2>&1
+        docker run --rm --name "$container" --network host \
+            -v "${CERT_DIR}:/certs:ro" \
+            "${env_args[@]}" agw-e2e-client:latest 2>&1
     fi
 }
 
@@ -513,13 +586,17 @@ main() {
     mkdir -p "${LOG_DIR}" "${REPORT_DIR}"
     rm -f "${LOG_DIR}/results.txt"
     
-    [ "$CLEANUP_ONLY" = true ] && { cleanup_containers "$TARGET_CASE" "$CLEANUP_IMAGES"; exit 0; }
+    [ "$CLEANUP_ONLY" = true ] && { cleanup_containers "$TARGET_CASE" "$CLEANUP_IMAGES"; cleanup_test_certs; exit 0; }
     
     [ ! -f "$STRATEGY_FILE" ] && { log_error "Strategy file not found: ${STRATEGY_FILE}"; exit 1; }
     
     [ "$YQ_AVAILABLE" = false ] && log_warn "yq not found, using fallback parsing"
     
     build_images
+    
+    generate_test_certs
+    
+    trap cleanup_test_certs EXIT
     
     log_info "Testing: ${STRATEGY_FILE}"
     log_info "Workers: ${PARALLEL_WORKERS}"

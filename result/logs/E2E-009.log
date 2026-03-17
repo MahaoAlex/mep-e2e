@@ -1,0 +1,10 @@
+=== E2E-009: First endpoint returns 401 no retry ===
+Servers: agw-e2e-server-E2E-009-0
+Ports: 8800
+Callback: localhost:8800
+Output:
+2026/03/16 09:12:15 Starting E2E test: E2E-009
+2026/03/16 09:12:15 Callback addresses: localhost:8800
+2026/03/16 09:12:15 TEST PASSED: E2E-009
+PASS
+Exit: 0

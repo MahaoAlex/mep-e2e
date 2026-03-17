@@ -1,0 +1,9 @@
+=== E2E-010: Client config error causes timeout no retry ===
+Servers: 
+Ports: 
+Callback: 
+Output:
+2026/03/16 09:12:14 Starting E2E test: E2E-010
+2026/03/16 09:12:14 Callback addresses: 
+2026/03/16 09:12:14 CALLBACK_ADDRS is required
+Exit: 1

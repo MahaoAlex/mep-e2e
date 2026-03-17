@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -71,6 +73,36 @@ func validateResult(expected ExpectedConfig, actual ActualResult) ValidationResu
 	return ValidationResult{Pass: true}
 }
 
+func createHTTPClient() (*http.Client, error) {
+	enableHTTPS := os.Getenv("ENABLE_HTTPS") == "true"
+	caCertFile := os.Getenv("CA_CERT_FILE")
+
+	if !enableHTTPS {
+		return &http.Client{Timeout: 5 * time.Second}, nil
+	}
+
+	caCert, err := os.ReadFile(caCertFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CA cert: %v", err)
+	}
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+
+	tlsConfig := &tls.Config{
+		RootCAs: caCertPool,
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: tlsConfig,
+	}
+
+	return &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: transport,
+	}, nil
+}
+
 func main() {
 	testCaseID := os.Getenv("TEST_CASE_ID")
 	callbackAddrs := os.Getenv("CALLBACK_ADDRS")
@@ -78,9 +110,11 @@ func main() {
 	expectedResponseCode := os.Getenv("EXPECTED_RESPONSE_CODE")
 	expectedMsg := os.Getenv("EXPECTED_MSG")
 	expectedError := os.Getenv("EXPECTED_ERROR")
+	enableHTTPS := os.Getenv("ENABLE_HTTPS") == "true"
 
 	log.Printf("Starting E2E test: %s", testCaseID)
 	log.Printf("Callback addresses: %s", callbackAddrs)
+	log.Printf("HTTPS enabled: %v", enableHTTPS)
 
 	if testCaseID == "" {
 		log.Fatal("TEST_CASE_ID is required")
@@ -140,7 +174,13 @@ func main() {
 }
 
 func makeRequest(addr string) (*RegisterResponse, error) {
-	url := fmt.Sprintf("http://%s/v3/api/sandbox/register", strings.TrimSpace(addr))
+	enableHTTPS := os.Getenv("ENABLE_HTTPS") == "true"
+
+	scheme := "http"
+	if enableHTTPS {
+		scheme = "https"
+	}
+	url := fmt.Sprintf("%s://%s/v3/api/sandbox/register", scheme, strings.TrimSpace(addr))
 
 	reqBody := RegisterRequest{
 		SandboxID:         "test-sandbox-001",
@@ -154,8 +194,9 @@ func makeRequest(addr string) (*RegisterResponse, error) {
 		return nil, fmt.Errorf("failed to marshal request: %v", err)
 	}
 
-	client := &http.Client{
-		Timeout: 5 * time.Second,
+	client, err := createHTTPClient()
+	if err != nil {
+		return nil, err
 	}
 
 	resp, err := client.Post(url, "application/json", strings.NewReader(string(body)))

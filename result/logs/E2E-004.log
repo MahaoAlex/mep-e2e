@@ -1,0 +1,10 @@
+=== E2E-004: Both endpoints return errors ===
+Servers: agw-e2e-server-E2E-004-0 agw-e2e-server-E2E-004-1
+Ports: 8300 8301
+Callback: localhost:8300,localhost:8301
+Output:
+2026/03/16 09:12:04 Starting E2E test: E2E-004
+2026/03/16 09:12:04 Callback addresses: localhost:8300,localhost:8301
+2026/03/16 09:12:04 TEST FAILED: E2E-004 - Expected message 'not found', got 'internal server error'
+FAIL: Expected message 'not found', got 'internal server error'
+Exit: 1

@@ -1,0 +1,10 @@
+=== E2E-002: First endpoint fails then retries successfully ===
+Servers: agw-e2e-server-E2E-002-0
+Ports: 8100
+Callback: localhost:8100
+Output:
+2026/03/16 09:12:00 Starting E2E test: E2E-002
+2026/03/16 09:12:00 Callback addresses: localhost:8100
+2026/03/16 09:12:00 TEST FAILED: E2E-002 - Expected message 'success', got 'service unavailable'
+FAIL: Expected message 'success', got 'service unavailable'
+Exit: 1

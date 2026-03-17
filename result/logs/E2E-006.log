@@ -1,0 +1,10 @@
+=== E2E-006: First endpoint returns 429 then retries successfully ===
+Servers: agw-e2e-server-E2E-006-0
+Ports: 8500
+Callback: localhost:8500
+Output:
+2026/03/16 09:12:07 Starting E2E test: E2E-006
+2026/03/16 09:12:07 Callback addresses: localhost:8500
+FAIL: Expected message 'success', got 'too many requests'
+2026/03/16 09:12:07 TEST FAILED: E2E-006 - Expected message 'success', got 'too many requests'
+Exit: 1

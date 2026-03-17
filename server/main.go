@@ -100,8 +100,13 @@ func main() {
 		fmt.Sscanf(p, "%d", &server2Port)
 	}
 
+	enableHTTPS := os.Getenv("ENABLE_HTTPS") == "true"
+	certFile := os.Getenv("CERT_FILE")
+	keyFile := os.Getenv("KEY_FILE")
+
 	testCaseID := os.Getenv("TEST_CASE_ID")
 	log.Printf("E2E mock server starting for test case: %s", testCaseID)
+	log.Printf("HTTPS enabled: %v", enableHTTPS)
 
 	serverBehavior := loadServerBehavior()
 
@@ -120,8 +125,14 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Printf("Server 1 listening on port %d", server1Port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("Server 1 listening on port %d (HTTPS: %v)", server1Port, enableHTTPS)
+		var err error
+		if enableHTTPS && certFile != "" && keyFile != "" {
+			err = server.ListenAndServeTLS(certFile, keyFile)
+		} else {
+			err = server.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			log.Printf("Server 1 error: %v", err)
 		}
 	}()
@@ -129,7 +140,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Printf("Server 2 listening on port %d", server2Port)
+		log.Printf("Server 2 listening on port %d (HTTPS: %v)", server2Port, enableHTTPS)
 		mux2 := http.NewServeMux()
 		mux2.HandleFunc("/v3/api/sandbox/register", registerHandler(serverBehavior))
 		mux2.HandleFunc("/v3/api/sandbox/unregister", unregisterHandler(serverBehavior))
@@ -141,7 +152,13 @@ func main() {
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		}
-		if err := server2.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if enableHTTPS && certFile != "" && keyFile != "" {
+			err = server2.ListenAndServeTLS(certFile, keyFile)
+		} else {
+			err = server2.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			log.Printf("Server 2 error: %v", err)
 		}
 	}()

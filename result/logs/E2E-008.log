@@ -1,0 +1,10 @@
+=== E2E-008: First endpoint returns 400 no retry ===
+Servers: agw-e2e-server-E2E-008-0
+Ports: 8700
+Callback: localhost:8700
+Output:
+2026/03/16 09:12:13 Starting E2E test: E2E-008
+2026/03/16 09:12:13 Callback addresses: localhost:8700
+2026/03/16 09:12:13 TEST PASSED: E2E-008
+PASS
+Exit: 0
