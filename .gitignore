@@ -2,6 +2,6 @@ result/
 
 server/server
 client/client
-hack/certs/
-hack/logs/
-hack/reports/
+scripts/certs/
+scripts/logs/
+scripts/reports/
