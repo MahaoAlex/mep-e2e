@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mep-e2e/pkg/logger"
 	"net/http"
 	"os"
 	"strings"
@@ -138,20 +139,20 @@ func createHTTPClient() (*http.Client, error) {
 }
 
 func printRequestLogs() {
-	log.Println("========== REQUEST LOGS ==========")
+	logger.Println("========== REQUEST LOGS ==========")
 	for i, reqLog := range requestLogs {
-		log.Printf("---------- Request #%d ----------", i+1)
-		log.Printf("  URL: %s", reqLog.URL)
-		log.Printf("  Method: %s", reqLog.Method)
-		log.Printf("  Request Body: %s", reqLog.RequestBody)
-		log.Printf("  Status Code: %d", reqLog.StatusCode)
-		log.Printf("  Response Body: %s", reqLog.ResponseBody)
+		logger.Printf("---------- Request #%d ----------", i+1)
+		logger.Printf("  URL: %s", reqLog.URL)
+		logger.Printf("  Method: %s", reqLog.Method)
+		logger.Printf("  Request Body: %s", reqLog.RequestBody)
+		logger.Printf("  Status Code: %d", reqLog.StatusCode)
+		logger.Printf("  Response Body: %s", reqLog.ResponseBody)
 		if reqLog.Error != "" {
-			log.Printf("  Error: %s", reqLog.Error)
+			logger.Printf("  Error: %s", reqLog.Error)
 		}
-		log.Printf("  Duration: %v", reqLog.Duration)
+		logger.Printf("  Duration: %v", reqLog.Duration)
 	}
-	log.Println("==================================")
+	logger.Println("==================================")
 }
 
 func main() {
@@ -167,111 +168,120 @@ func main() {
 	clientKey := os.Getenv("CLIENT_KEY_FILE")
 	agentGatewayDomain := os.Getenv("AGENT_GATEWAY_DOMAIN")
 
+	logFile := os.Getenv("LOG_FILE")
+	logDir := os.Getenv("LOG_DIR")
+	enableFileLog := os.Getenv("ENABLE_FILE_LOG") == "true"
+
 	if agentGatewayDomain == "" {
 		agentGatewayDomain = "agent-gateway.e2e.region.com"
 	}
 
-	log.Println("============================================")
-	log.Printf("TEST CASE: %s", testCaseID)
-	log.Println("============================================")
-	log.Printf("Test Scenario: %s", getTestScenario(testCaseID))
-	log.Println("")
-	log.Println("=== Expected Output ===")
+	logCfg := logger.Config{
+		EnableConsole: true,
+		EnableFile:    enableFileLog,
+		LogFile:       logFile,
+		LogDir:        logDir,
+		LogFileName:   fmt.Sprintf("client-%s.log", testCaseID),
+	}
+	if err := logger.Init(logCfg); err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer logger.Close()
+
+	logger.Println("============================================")
+	logger.Printf("TEST CASE: %s", testCaseID)
+	logger.Println("============================================")
+	logger.Printf("Test Scenario: %s", getTestScenario(testCaseID))
+	logger.Println("")
+	logger.Println("=== Expected Output ===")
 	if expectedHTTPCode != "" {
-		log.Printf("  HTTP Code: %s", expectedHTTPCode)
+		logger.Printf("  HTTP Code: %s", expectedHTTPCode)
 	}
 	if expectedResponseCode != "" {
-		log.Printf("  Response Code: %s", expectedResponseCode)
+		logger.Printf("  Response Code: %s", expectedResponseCode)
 	}
 	if expectedMsg != "" {
-		log.Printf("  Response Message: %s", expectedMsg)
+		logger.Printf("  Response Message: %s", expectedMsg)
 	}
 	if expectedError != "" {
-		log.Printf("  Error Contains: %s", expectedError)
+		logger.Printf("  Error Contains: %s", expectedError)
 	}
-	log.Println("")
-	log.Printf("Callback addresses: %s", callbackAddrs)
-	log.Printf("HTTPS enabled: %v", enableHTTPS)
-	log.Println("")
+	logger.Println("")
+	logger.Printf("Callback addresses: %s", callbackAddrs)
+	logger.Printf("HTTPS enabled: %v", enableHTTPS)
+	logger.Println("")
 
 	if testCaseID == "" {
-		log.Fatal("TEST_CASE_ID is required")
+		logger.Fatal("TEST_CASE_ID is required")
 	}
 
 	if callbackAddrs == "" {
-		log.Fatal("CALLBACK_ADDRS is required")
+		logger.Fatal("CALLBACK_ADDRS is required")
 	}
 
 	addrs := strings.Split(callbackAddrs, ",")
 	if len(addrs) == 0 {
-		log.Fatal("No callback addresses provided")
+		logger.Fatal("No callback addresses provided")
 	}
-
-	clientError := os.Getenv("CLIENT_ERROR") == "true"
 
 	var err error
 	var responseCode int
 	var responseMsg string
 
-	if clientError {
-		_, err = http.Get("http://invalid-host-that-does-not-exist:9999/register")
+	sandboxStorage := NewMockSandboxStorage(addrs)
+
+	var gatewayClient gateway.Client
+	if agentGatewayDomain != "" || caCert != "" || clientCert != "" {
+		gatewayClient = gateway.NewClientWithMultiEndpoints(
+			gateway.TLSConfig{
+				CACertPath:         caCert,
+				ClientCertPath:     clientCert,
+				ClientKeyPath:      clientKey,
+				InsecureSkipVerify: true,
+			},
+			agentGatewayDomain,
+			sandboxStorage,
+			logger.Default().Logger,
+		)
+		logger.Printf("Gateway client initialized for domain: %s", agentGatewayDomain)
+	} else {
+		gatewayClient = gateway.NewClientWithMultiEndpoints(
+			gateway.TLSConfig{
+				InsecureSkipVerify: true,
+			},
+			"",
+			sandboxStorage,
+			logger.Default().Logger,
+		)
+		logger.Printf("Gateway client initialized without TLS")
+	}
+
+	ctx := context.Background()
+	req := &gateway.RegisterSandboxRequest{
+		SandboxID:         "test-sandbox-001",
+		HostAddress:       "192.168.1.100",
+		CellID:            "test-cell-001",
+		SandboxTemplateID: "template-001",
+	}
+
+	resp, rErr := gatewayClient.RegisterSandbox(ctx, req)
+	if rErr != nil {
+		err = rErr
 		responseCode = 0
 	} else {
-		sandboxStorage := NewMockSandboxStorage(addrs)
-
-		var gatewayClient gateway.Client
-		if agentGatewayDomain != "" || caCert != "" || clientCert != "" {
-			gatewayClient = gateway.NewClientWithMultiEndpoints(
-				gateway.TLSConfig{
-					CACertPath:         caCert,
-					ClientCertPath:     clientCert,
-					ClientKeyPath:      clientKey,
-					InsecureSkipVerify: true,
-				},
-				agentGatewayDomain,
-				sandboxStorage,
-				log.Default(),
-			)
-			log.Printf("Gateway client initialized for domain: %s", agentGatewayDomain)
-		} else {
-			gatewayClient = gateway.NewClientWithMultiEndpoints(
-				gateway.TLSConfig{
-					InsecureSkipVerify: true,
-				},
-				"",
-				sandboxStorage,
-				log.Default(),
-			)
-			log.Printf("Gateway client initialized without TLS")
-		}
-
-		ctx := context.Background()
-		req := &gateway.RegisterSandboxRequest{
-			SandboxID:         "test-sandbox-001",
-			HostAddress:       "192.168.1.100",
-			CellID:            "test-cell-001",
-			SandboxTemplateID: "template-001",
-		}
-
-		resp, rErr := gatewayClient.RegisterSandbox(ctx, req)
-		if rErr != nil {
-			err = rErr
-			responseCode = 0
-		} else {
-			responseCode = resp.Code
-			responseMsg = resp.Message
-		}
+		responseCode = resp.Code
+		responseMsg = resp.Message
 	}
 
-	log.Println("")
-	log.Println("=== Actual Output ===")
+	logger.Println("")
+	logger.Println("=== Actual Output ===")
 	if err != nil {
-		log.Printf("  Error: %v", err)
+		logger.Printf("  Error: %v", err)
 	} else {
-		log.Printf("  Response Code: %d", responseCode)
-		log.Printf("  Response Message: %s", responseMsg)
+		logger.Printf("  Response Code: %d", responseCode)
+		logger.Printf("  Response Message: %s", responseMsg)
 	}
-	log.Println("")
+	logger.Println("")
 
 	printRequestLogs()
 
@@ -288,49 +298,49 @@ func main() {
 		},
 	)
 
-	log.Println("=== Comparison ===")
+	logger.Println("=== Comparison ===")
 
 	if expectedError != "" {
 		if err != nil && strings.Contains(err.Error(), expectedError) {
-			log.Printf("  Error Match:     PASS (expected contains '%s', got '%v')", expectedError, err)
+			logger.Printf("  Error Match:     PASS (expected contains '%s', got '%v')", expectedError, err)
 		} else if err != nil {
-			log.Printf("  Error Match:     FAIL (expected contains '%s', got '%v')", expectedError, err)
+			logger.Printf("  Error Match:     FAIL (expected contains '%s', got '%v')", expectedError, err)
 		} else {
-			log.Printf("  Error Match:     FAIL (expected error containing '%s', but got success)", expectedError)
+			logger.Printf("  Error Match:     FAIL (expected error containing '%s', but got success)", expectedError)
 		}
 	} else if err != nil {
-		log.Printf("  Error Match:     FAIL (unexpected error: %v)", err)
+		logger.Printf("  Error Match:     FAIL (unexpected error: %v)", err)
 	}
 
 	if expectedResponseCode != "" {
 		expectedCode := 0
 		fmt.Sscanf(expectedResponseCode, "%d", &expectedCode)
 		if responseCode == expectedCode {
-			log.Printf("  Response Code:   PASS (expected %d, got %d)", expectedCode, responseCode)
+			logger.Printf("  Response Code:   PASS (expected %d, got %d)", expectedCode, responseCode)
 		} else {
-			log.Printf("  Response Code:   FAIL (expected %d, got %d)", expectedCode, responseCode)
+			logger.Printf("  Response Code:   FAIL (expected %d, got %d)", expectedCode, responseCode)
 		}
 	}
 
 	if expectedMsg != "" {
 		if responseMsg == expectedMsg {
-			log.Printf("  Response Msg:    PASS (expected '%s', got '%s')", expectedMsg, responseMsg)
+			logger.Printf("  Response Msg:    PASS (expected '%s', got '%s')", expectedMsg, responseMsg)
 		} else {
-			log.Printf("  Response Msg:    FAIL (expected '%s', got '%s')", expectedMsg, responseMsg)
+			logger.Printf("  Response Msg:    FAIL (expected '%s', got '%s')", expectedMsg, responseMsg)
 		}
 	}
 
-	log.Println("")
+	logger.Println("")
 
-	log.Println("============================================")
+	logger.Println("============================================")
 	if result.Pass {
-		log.Printf("RESULT: PASSED")
+		logger.Printf("RESULT: PASSED")
 		fmt.Println("PASS")
 		os.Exit(0)
 	}
 
-	log.Printf("RESULT: FAILED")
-	log.Printf("  Reason: %s", result.ErrorMsg)
+	logger.Printf("RESULT: FAILED")
+	logger.Printf("  Reason: %s", result.ErrorMsg)
 	fmt.Printf("FAIL: %s\n", result.ErrorMsg)
 	os.Exit(1)
 }
@@ -380,8 +390,8 @@ func makeRequest(addr string, attempt int) (*RegisterResponse, error) {
 		return nil, err
 	}
 
-	log.Printf(">>> Request #%d: POST %s", attempt, url)
-	log.Printf(">>> Request Body: %s", string(body))
+	logger.Printf(">>> Request #%d: POST %s", attempt, url)
+	logger.Printf(">>> Request Body: %s", string(body))
 
 	start := time.Now()
 	resp, err := client.Post(url, "application/json", strings.NewReader(string(body)))
@@ -398,7 +408,7 @@ func makeRequest(addr string, attempt int) (*RegisterResponse, error) {
 	if err != nil {
 		reqLog.Error = err.Error()
 		requestLogs = append(requestLogs, reqLog)
-		log.Printf("<<< Response #%d: ERROR - %v (duration: %v)", attempt, err, duration)
+		logger.Printf("<<< Response #%d: ERROR - %v (duration: %v)", attempt, err, duration)
 		return nil, fmt.Errorf("connection refused: %v", err)
 	}
 	defer resp.Body.Close()
@@ -414,8 +424,8 @@ func makeRequest(addr string, attempt int) (*RegisterResponse, error) {
 	reqLog.ResponseBody = string(respBody)
 	requestLogs = append(requestLogs, reqLog)
 
-	log.Printf("<<< Response #%d: HTTP %d (duration: %v)", attempt, resp.StatusCode, duration)
-	log.Printf("<<< Response Body: %s", string(respBody))
+	logger.Printf("<<< Response #%d: HTTP %d (duration: %v)", attempt, resp.StatusCode, duration)
+	logger.Printf("<<< Response Body: %s", string(respBody))
 
 	var result RegisterResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {

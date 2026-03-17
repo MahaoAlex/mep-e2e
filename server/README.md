@@ -25,6 +25,9 @@ docker build -t agw-e2e-server:latest .
 | FAIL_RESPONSE_BODY | Response body for failure | {"code":500,"msg":"error"} |
 | SUCCESS_RESPONSE_CODE | HTTP response code after fail count reached | 200 |
 | SUCCESS_RESPONSE_BODY | Response body after fail count reached | {"code":0,"msg":"success"} |
+| ENABLE_FILE_LOG | Enable file logging | false |
+| LOG_FILE | Log file path (overrides LOG_DIR) | - |
+| LOG_DIR | Log directory (generates server-{TEST_CASE_ID}.log) | - |
 
 ## Behavior Types
 

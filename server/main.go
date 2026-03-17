@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mep-e2e/pkg/logger"
 	"net/http"
 	"os"
 	"os/signal"
@@ -85,6 +86,23 @@ func main() {
 	cfg := loadConfig()
 	_ = cfg
 
+	testCaseID := os.Getenv("TEST_CASE_ID")
+	logFile := os.Getenv("LOG_FILE")
+	logDir := os.Getenv("LOG_DIR")
+	enableFileLog := os.Getenv("ENABLE_FILE_LOG") == "true"
+
+	logCfg := logger.Config{
+		EnableConsole: true,
+		EnableFile:    enableFileLog,
+		LogFile:       logFile,
+		LogDir:        logDir,
+		LogFileName:   fmt.Sprintf("server-%s.log", testCaseID),
+	}
+	if err := logger.Init(logCfg); err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer logger.Close()
+
 	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -104,9 +122,8 @@ func main() {
 	certFile := os.Getenv("CERT_FILE")
 	keyFile := os.Getenv("KEY_FILE")
 
-	testCaseID := os.Getenv("TEST_CASE_ID")
-	log.Printf("E2E mock server starting for test case: %s", testCaseID)
-	log.Printf("HTTPS enabled: %v", enableHTTPS)
+	logger.Printf("E2E mock server starting for test case: %s", testCaseID)
+	logger.Printf("HTTPS enabled: %v", enableHTTPS)
 
 	serverBehavior := loadServerBehavior()
 
@@ -125,7 +142,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Printf("Server 1 listening on port %d (HTTPS: %v)", server1Port, enableHTTPS)
+		logger.Printf("Server 1 listening on port %d (HTTPS: %v)", server1Port, enableHTTPS)
 		var err error
 		if enableHTTPS && certFile != "" && keyFile != "" {
 			err = server.ListenAndServeTLS(certFile, keyFile)
@@ -133,14 +150,14 @@ func main() {
 			err = server.ListenAndServe()
 		}
 		if err != nil && err != http.ErrServerClosed {
-			log.Printf("Server 1 error: %v", err)
+			logger.Printf("Server 1 error: %v", err)
 		}
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Printf("Server 2 listening on port %d (HTTPS: %v)", server2Port, enableHTTPS)
+		logger.Printf("Server 2 listening on port %d (HTTPS: %v)", server2Port, enableHTTPS)
 		mux2 := http.NewServeMux()
 		mux2.HandleFunc("/v3/api/sandbox/register", registerHandler(serverBehavior))
 		mux2.HandleFunc("/v3/api/sandbox/unregister", unregisterHandler(serverBehavior))
@@ -159,17 +176,17 @@ func main() {
 			err = server2.ListenAndServe()
 		}
 		if err != nil && err != http.ErrServerClosed {
-			log.Printf("Server 2 error: %v", err)
+			logger.Printf("Server 2 error: %v", err)
 		}
 	}()
 
-	log.Printf("E2E mock server started, ports: %d, %d", server1Port, server2Port)
+	logger.Printf("E2E mock server started, ports: %d, %d", server1Port, server2Port)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
 
-	log.Println("Shutting down servers...")
+	logger.Println("Shutting down servers...")
 	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -178,7 +195,7 @@ func main() {
 	server.Shutdown(shutdownCtx)
 	wg.Wait()
 
-	log.Println("Server stopped")
+	logger.Println("Server stopped")
 }
 
 func loadConfig() Config {
@@ -246,40 +263,40 @@ func registerHandler(b *EndpointBehavior) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		requestID := fmt.Sprintf("req-%d", time.Now().UnixNano())
 
-		log.Println("============================================")
-		log.Printf("[REQUEST] %s - Register", requestID)
-		log.Println("============================================")
-		log.Printf("  Source: %s", r.RemoteAddr)
-		log.Printf("  Method: %s %s", r.Method, r.URL.Path)
-		log.Printf("  Headers: %v", r.Header)
+		logger.Println("============================================")
+		logger.Printf("[REQUEST] %s - Register", requestID)
+		logger.Println("============================================")
+		logger.Printf("  Source: %s", r.RemoteAddr)
+		logger.Printf("  Method: %s %s", r.Method, r.URL.Path)
+		logger.Printf("  Headers: %v", r.Header)
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			log.Printf("  Error reading body: %v", err)
+			logger.Printf("  Error reading body: %v", err)
 			http.Error(w, "Failed to read request body", http.StatusBadRequest)
 			return
 		}
 
 		var req map[string]interface{}
 		if err := json.Unmarshal(body, &req); err != nil {
-			log.Printf("  Error parsing body: %v", err)
+			logger.Printf("  Error parsing body: %v", err)
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
-		log.Printf("  Request Body: %s", string(body))
+		logger.Printf("  Request Body: %s", string(body))
 
 		time.Sleep(time.Duration(b.Delay) * time.Millisecond)
 
 		resp := b.GenerateResponse()
 		b.requestCounter++
 
-		log.Println("  ------------------------------------------")
-		log.Printf("  Response Status: %d", resp.StatusCode)
-		log.Printf("  Response Body: %s", resp.Body)
-		log.Printf("  Request Count: %d", b.requestCounter)
-		log.Printf("  Behavior Action: %s", b.Action)
-		log.Println("============================================")
+		logger.Println("  ------------------------------------------")
+		logger.Printf("  Response Status: %d", resp.StatusCode)
+		logger.Printf("  Response Body: %s", resp.Body)
+		logger.Printf("  Request Count: %d", b.requestCounter)
+		logger.Printf("  Behavior Action: %s", b.Action)
+		logger.Println("============================================")
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
@@ -291,40 +308,40 @@ func unregisterHandler(b *EndpointBehavior) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		requestID := fmt.Sprintf("req-%d", time.Now().UnixNano())
 
-		log.Println("============================================")
-		log.Printf("[REQUEST] %s - Unregister", requestID)
-		log.Println("============================================")
-		log.Printf("  Source: %s", r.RemoteAddr)
-		log.Printf("  Method: %s %s", r.Method, r.URL.Path)
-		log.Printf("  Headers: %v", r.Header)
+		logger.Println("============================================")
+		logger.Printf("[REQUEST] %s - Unregister", requestID)
+		logger.Println("============================================")
+		logger.Printf("  Source: %s", r.RemoteAddr)
+		logger.Printf("  Method: %s %s", r.Method, r.URL.Path)
+		logger.Printf("  Headers: %v", r.Header)
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			log.Printf("  Error reading body: %v", err)
+			logger.Printf("  Error reading body: %v", err)
 			http.Error(w, "Failed to read request body", http.StatusBadRequest)
 			return
 		}
 
 		var req map[string]interface{}
 		if err := json.Unmarshal(body, &req); err != nil {
-			log.Printf("  Error parsing body: %v", err)
+			logger.Printf("  Error parsing body: %v", err)
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
-		log.Printf("  Request Body: %s", string(body))
+		logger.Printf("  Request Body: %s", string(body))
 
 		time.Sleep(time.Duration(b.Delay) * time.Millisecond)
 
 		resp := b.GenerateResponse()
 		b.requestCounter++
 
-		log.Println("  ------------------------------------------")
-		log.Printf("  Response Status: %d", resp.StatusCode)
-		log.Printf("  Response Body: %s", resp.Body)
-		log.Printf("  Request Count: %d", b.requestCounter)
-		log.Printf("  Behavior Action: %s", b.Action)
-		log.Println("============================================")
+		logger.Println("  ------------------------------------------")
+		logger.Printf("  Response Status: %d", resp.StatusCode)
+		logger.Printf("  Response Body: %s", resp.Body)
+		logger.Printf("  Request Count: %d", b.requestCounter)
+		logger.Printf("  Behavior Action: %s", b.Action)
+		logger.Println("============================================")
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)

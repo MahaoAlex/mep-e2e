@@ -329,3 +329,36 @@ func (c *AgentGatewayClient) getRegisterEndpointGroup(callbackAddresses []string
 1. 基于以上要求，实现一个可以动态拉起客户端和服务端容器的脚本。
 2. 实现不同策略下的，服务端容器代码的实现。返回满足条件的HTTP请求返回。
 3. 客户端代码会申请对应的AgentClient，并打桩callbackAddress进行请求。在End2End的测试过程中，当前业务的代码主要会是客户端代码，所以会尽可实现客户端代码的复用。
+
+## 日志配置
+
+项目使用统一的日志模块 (`pkg/logger`)，支持同时输出到控制台和文件。
+
+### 环境变量
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| `ENABLE_FILE_LOG` | 是否启用文件日志输出 | `false` |
+| `LOG_FILE` | 日志文件完整路径 (优先级高) | - |
+| `LOG_DIR` | 日志文件目录 (与 `LOG_FILE` 二选一) | - |
+
+### 使用示例
+
+```bash
+# 仅控制台输出 (默认)
+./client
+
+# 同时输出到控制台和文件
+ENABLE_FILE_LOG=true ./client
+
+# 指定日志目录 (自动生成 client-{TEST_CASE_ID}.log 文件名)
+ENABLE_FILE_LOG=true LOG_DIR=/var/log/e2e ./client
+
+# 指定完整日志文件路径
+ENABLE_FILE_LOG=true LOG_FILE=/var/log/e2e/test.log ./client
+```
+
+### 日志文件命名规则
+
+- Client: `client-{TEST_CASE_ID}.log`
+- Server: `server-{TEST_CASE_ID}.log`
