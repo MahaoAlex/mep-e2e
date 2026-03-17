@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -11,6 +12,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"agw-e2e/client/gateway"
 )
 
 type RegisterRequest struct {
@@ -52,6 +55,25 @@ type RequestLog struct {
 	ResponseBody string
 	Error        string
 	Duration     time.Duration
+}
+
+type MockSandboxStorage struct {
+	callbackAddresses []string
+}
+
+func NewMockSandboxStorage(callbackAddresses []string) *MockSandboxStorage {
+	return &MockSandboxStorage{
+		callbackAddresses: callbackAddresses,
+	}
+}
+
+func (m *MockSandboxStorage) Get(ctx context.Context, key string) (*gateway.Sandbox, error) {
+	if key == "" {
+		return nil, fmt.Errorf("sandbox ID is empty")
+	}
+	return &gateway.Sandbox{
+		CallbackAddresses: m.callbackAddresses,
+	}, nil
 }
 
 var requestLogs []RequestLog
@@ -141,6 +163,10 @@ func main() {
 	expectedMsg := os.Getenv("EXPECTED_MSG")
 	expectedError := os.Getenv("EXPECTED_ERROR")
 	enableHTTPS := os.Getenv("ENABLE_HTTPS") == "true"
+	caCert := os.Getenv("CA_CERT_FILE")
+	clientCert := os.Getenv("CLIENT_CERT_FILE")
+	clientKey := os.Getenv("CLIENT_KEY_FILE")
+	agentGatewayDomain := os.Getenv("AGENT_GATEWAY_DOMAIN")
 
 	log.Println("============================================")
 	log.Printf("TEST CASE: %s", testCaseID)
@@ -188,7 +214,43 @@ func main() {
 		_, err = http.Get("http://invalid-host-that-does-not-exist:9999/register")
 		responseCode = 0
 	} else {
-		resp, rErr := makeRequest(addrs[0], 1)
+		sandboxStorage := NewMockSandboxStorage(addrs)
+
+		var gatewayClient gateway.Client
+		if agentGatewayDomain != "" || caCert != "" || clientCert != "" {
+			gatewayClient = gateway.NewClientWithMultiEndpoints(
+				gateway.TLSConfig{
+					CACertPath:         caCert,
+					ClientCertPath:     clientCert,
+					ClientKeyPath:      clientKey,
+					InsecureSkipVerify: true,
+				},
+				agentGatewayDomain,
+				sandboxStorage,
+				log.Default(),
+			)
+			log.Printf("Gateway client initialized for domain: %s", agentGatewayDomain)
+		} else {
+			gatewayClient = gateway.NewClientWithMultiEndpoints(
+				gateway.TLSConfig{
+					InsecureSkipVerify: true,
+				},
+				"",
+				sandboxStorage,
+				log.Default(),
+			)
+			log.Printf("Gateway client initialized without TLS")
+		}
+
+		ctx := context.Background()
+		req := &gateway.RegisterSandboxRequest{
+			SandboxID:         "test-sandbox-001",
+			HostAddress:       "192.168.1.100",
+			CellID:            "test-cell-001",
+			SandboxTemplateID: "template-001",
+		}
+
+		resp, rErr := gatewayClient.RegisterSandbox(ctx, req)
 		if rErr != nil {
 			err = rErr
 			responseCode = 0
