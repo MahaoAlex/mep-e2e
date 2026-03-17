@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -33,9 +35,9 @@ type RegisterSandboxRequest struct {
 }
 
 type RegisterSandboxResponse struct {
-	Code      int
-	Message   string
-	RequestID string
+	Code      int    `json:"code"`
+	Message   string `json:"msg"`
+	RequestID string `json:"request_id"`
 }
 
 type Client interface {
@@ -120,17 +122,28 @@ func (c *ClientImpl) makeRequest(ctx context.Context, addr string, req *Register
 	}
 	defer resp.Body.Close()
 
-	c.logger.Printf("<<< Response from %s: HTTP %d (duration: %v)", addr, resp.StatusCode, duration)
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("server returned status %d", resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
 	}
 
-	return &RegisterSandboxResponse{
-		Code:      0,
-		Message:   "success",
-		RequestID: fmt.Sprintf("req-%d", time.Now().UnixNano()),
-	}, nil
+	c.logger.Printf("<<< Response from %s: HTTP %d (duration: %v)", addr, resp.StatusCode, duration)
+	c.logger.Printf("<<< Response Body: %s", string(body))
+
+	if resp.StatusCode >= 400 {
+		var errResp RegisterSandboxResponse
+		if json.Unmarshal(body, &errResp) == nil {
+			return &errResp, nil
+		}
+		return nil, fmt.Errorf("server returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result RegisterSandboxResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %v, body: %s", err, string(body))
+	}
+
+	return &result, nil
 }
 
 func (c *ClientImpl) buildRequestBody(req *RegisterSandboxRequest) string {

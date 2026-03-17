@@ -34,7 +34,6 @@ testCases:
       image: "agw-e2e-client:latest"
       env:
         - TEST_CASE_ID=E2E-001
-        - CALLBACK_ADDRS=mock-server-1:8080
     server:
       endpoints:
         - id: "mock-server-1"
@@ -56,7 +55,6 @@ testCases:
       image: "agw-e2e-client:latest"
       env:
         - TEST_CASE_ID=E2E-002
-        - CALLBACK_ADDRS=mock-server-1:8080
     server:
       endpoints:
         - id: "mock-server-1"
@@ -81,7 +79,6 @@ testCases:
       image: "agw-e2e-client:latest"
       env:
         - TEST_CASE_ID=E2E-003
-        - CALLBACK_ADDRS=mock-server-1:8080,mock-server-2:8081
     server:
       endpoints:
         - id: "mock-server-1"
@@ -110,7 +107,6 @@ testCases:
       image: "agw-e2e-client:latest"
       env:
         - TEST_CASE_ID=E2E-004
-        - CALLBACK_ADDRS=mock-server-1:8080,mock-server-2:8081
     server:
       endpoints:
         - id: "mock-server-1"
@@ -137,7 +133,6 @@ testCases:
       image: "agw-e2e-client:latest"
       env:
         - TEST_CASE_ID=E2E-005
-        - CALLBACK_ADDRS=mock-server-1:8080,mock-server-2:8081
     server:
       endpoints:
         - id: "mock-server-1"
@@ -163,7 +158,6 @@ testCases:
       image: "agw-e2e-client:latest"
       env:
         - TEST_CASE_ID=E2E-006
-        - CALLBACK_ADDRS=mock-server-1:8080
     server:
       endpoints:
         - id: "mock-server-1"
@@ -188,7 +182,6 @@ testCases:
       image: "agw-e2e-client:latest"
       env:
         - TEST_CASE_ID=E2E-007
-        - CALLBACK_ADDRS=mock-server-1:8080
     server:
       endpoints:
         - id: "mock-server-1"
@@ -213,7 +206,6 @@ testCases:
       image: "agw-e2e-client:latest"
       env:
         - TEST_CASE_ID=E2E-008
-        - CALLBACK_ADDRS=mock-server-1:8080
     server:
       endpoints:
         - id: "mock-server-1"
@@ -235,7 +227,6 @@ testCases:
       image: "agw-e2e-client:latest"
       env:
         - TEST_CASE_ID=E2E-009
-        - CALLBACK_ADDRS=mock-server-1:8080
     server:
       endpoints:
         - id: "mock-server-1"
@@ -256,7 +247,6 @@ testCases:
       image: "agw-e2e-client:latest"
       env:
         - TEST_CASE_ID=E2E-010
-        - CALLBACK_ADDRS=invalid-host:9999
         - CLIENT_ERROR=true
     server:
       endpoints: []
