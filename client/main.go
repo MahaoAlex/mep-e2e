@@ -168,6 +168,10 @@ func main() {
 	clientKey := os.Getenv("CLIENT_KEY_FILE")
 	agentGatewayDomain := os.Getenv("AGENT_GATEWAY_DOMAIN")
 
+	if agentGatewayDomain == "" {
+		agentGatewayDomain = "agent-gateway.e2e.region.com"
+	}
+
 	log.Println("============================================")
 	log.Printf("TEST CASE: %s", testCaseID)
 	log.Println("============================================")

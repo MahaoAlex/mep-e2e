@@ -340,7 +340,7 @@ stop_server_containers() {
 build_callback_addrs() {
     local addrs=""
     for port in "${SERVER_PORTS[@]}"; do
-        addrs="${addrs:+$addrs,}localhost:${port}"
+        addrs="${addrs:+$addrs,}127.0.0.1:${port}"
     done
     echo "$addrs"
 }
