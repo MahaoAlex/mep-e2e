@@ -244,26 +244,42 @@ func loadServerBehavior() *EndpointBehavior {
 
 func registerHandler(b *EndpointBehavior) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Received register request from %s", r.RemoteAddr)
+		requestID := fmt.Sprintf("req-%d", time.Now().UnixNano())
+
+		log.Println("============================================")
+		log.Printf("[REQUEST] %s - Register", requestID)
+		log.Println("============================================")
+		log.Printf("  Source: %s", r.RemoteAddr)
+		log.Printf("  Method: %s %s", r.Method, r.URL.Path)
+		log.Printf("  Headers: %v", r.Header)
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
+			log.Printf("  Error reading body: %v", err)
 			http.Error(w, "Failed to read request body", http.StatusBadRequest)
 			return
 		}
 
 		var req map[string]interface{}
 		if err := json.Unmarshal(body, &req); err != nil {
-			log.Printf("Failed to parse request: %v", err)
+			log.Printf("  Error parsing body: %v", err)
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
-		log.Printf("Register request: %v", req)
+		log.Printf("  Request Body: %s", string(body))
 
 		time.Sleep(time.Duration(b.Delay) * time.Millisecond)
 
 		resp := b.GenerateResponse()
+		b.requestCounter++
+
+		log.Println("  ------------------------------------------")
+		log.Printf("  Response Status: %d", resp.StatusCode)
+		log.Printf("  Response Body: %s", resp.Body)
+		log.Printf("  Request Count: %d", b.requestCounter)
+		log.Printf("  Behavior Action: %s", b.Action)
+		log.Println("============================================")
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
@@ -273,26 +289,42 @@ func registerHandler(b *EndpointBehavior) http.HandlerFunc {
 
 func unregisterHandler(b *EndpointBehavior) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Received unregister request from %s", r.RemoteAddr)
+		requestID := fmt.Sprintf("req-%d", time.Now().UnixNano())
+
+		log.Println("============================================")
+		log.Printf("[REQUEST] %s - Unregister", requestID)
+		log.Println("============================================")
+		log.Printf("  Source: %s", r.RemoteAddr)
+		log.Printf("  Method: %s %s", r.Method, r.URL.Path)
+		log.Printf("  Headers: %v", r.Header)
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
+			log.Printf("  Error reading body: %v", err)
 			http.Error(w, "Failed to read request body", http.StatusBadRequest)
 			return
 		}
 
 		var req map[string]interface{}
 		if err := json.Unmarshal(body, &req); err != nil {
-			log.Printf("Failed to parse request: %v", err)
+			log.Printf("  Error parsing body: %v", err)
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
-		log.Printf("Unregister request: %v", req)
+		log.Printf("  Request Body: %s", string(body))
 
 		time.Sleep(time.Duration(b.Delay) * time.Millisecond)
 
 		resp := b.GenerateResponse()
+		b.requestCounter++
+
+		log.Println("  ------------------------------------------")
+		log.Printf("  Response Status: %d", resp.StatusCode)
+		log.Printf("  Response Body: %s", resp.Body)
+		log.Printf("  Request Count: %d", b.requestCounter)
+		log.Printf("  Behavior Action: %s", b.Action)
+		log.Println("============================================")
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
