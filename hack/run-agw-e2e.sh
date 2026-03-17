@@ -394,42 +394,44 @@ ${container_log}
 
 run_tests_sequential() {
     local ids="$1"
-    local port=8000 offset=0
+    local base_port=8000 idx=0
     
     readarray -t cases <<< "$ids"
     for id in "${cases[@]}"; do
-        run_test_case "$id" $((port + offset * 100))
-        ((offset++))
+        run_test_case "$id" $((base_port + idx * 100))
+        ((idx++))
     done > "${LOG_DIR}/results.txt"
 }
 
 run_tests_parallel() {
     local ids="$1"
     local workers="$2"
-    local port=8000 offset=0 running=0
+    local base_port=8000
     local -a pids=()
+    local -a port_map=()
     
     readarray -t cases <<< "$ids"
     
-    for id in "${cases[@]}"; do
-        while [ $running -ge $workers ]; do
+    for idx in "${!cases[@]}"; do
+        local id="${cases[$idx]}"
+        local assigned_port=$((base_port + idx * 100))
+        
+        while [ ${#pids[@]} -ge $workers ]; do
             for i in "${!pids[@]}"; do
-                kill -0 "${pids[$i]}" 2>/dev/null || {
+                if ! kill -0 "${pids[$i]}" 2>/dev/null; then
                     wait "${pids[$i]}" 2>/dev/null
                     unset 'pids[$i]'
-                    ((running--))
                     break
-                }
+                fi
             done
             sleep 0.5
         done
         
         (
-            run_test_case "$id" $((port + offset * 100))
+            run_test_case "$id" "$assigned_port"
         ) >> "${LOG_DIR}/results.txt" &
         pids+=($!)
-        ((running++))
-        ((offset++))
+        port_map+=($assigned_port)
     done
     
     for p in "${pids[@]}"; do wait "$p" 2>/dev/null; done
