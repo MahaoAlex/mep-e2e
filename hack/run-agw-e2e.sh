@@ -177,8 +177,29 @@ is_null_or_empty() {
 }
 
 # =============================================================================
-# Docker Operations
+# Build Operations
 # =============================================================================
+
+build_binaries() {
+    log_info "Building Go binaries..."
+    
+    local server_dir="${SCRIPT_DIR}/../server"
+    local client_dir="${SCRIPT_DIR}/../client"
+    
+    log_info "Building server binary..."
+    CGO_ENABLED=0 GOOS=linux go build -o "${server_dir}/server" "${server_dir}" 2>&1 | tee -a "${LOG_DIR}/build.log" || {
+        log_error "Failed to build server binary"
+        exit 1
+    }
+    
+    log_info "Building client binary..."
+    CGO_ENABLED=0 GOOS=linux go build -o "${client_dir}/client" "${client_dir}" 2>&1 | tee -a "${LOG_DIR}/build.log" || {
+        log_error "Failed to build client binary"
+        exit 1
+    }
+    
+    log_info "Binaries built successfully"
+}
 
 build_images() {
     log_info "Building Docker images..."
@@ -192,6 +213,11 @@ build_images() {
         log_error "Failed to build client image"; exit 1
     }
     log_info "Client image built"
+}
+
+cleanup_binaries() {
+    log_info "Cleaning up binaries..."
+    rm -f "${SCRIPT_DIR}/../server/server" "${SCRIPT_DIR}/../client/client"
 }
 
 cleanup_containers() {
@@ -592,11 +618,13 @@ main() {
     
     [ "$YQ_AVAILABLE" = false ] && log_warn "yq not found, using fallback parsing"
     
+    build_binaries
+    
     build_images
     
     generate_test_certs
     
-    trap cleanup_test_certs EXIT
+    trap 'cleanup_test_certs; cleanup_binaries' EXIT
     
     log_info "Testing: ${STRATEGY_FILE}"
     log_info "Workers: ${PARALLEL_WORKERS}"

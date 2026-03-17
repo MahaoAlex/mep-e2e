@@ -1,1 +1,7 @@
 result/
+
+server/server
+client/client
+hack/certs/
+hack/logs/
+hack/reports/
