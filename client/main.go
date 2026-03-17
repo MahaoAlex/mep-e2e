@@ -223,6 +223,40 @@ func main() {
 		},
 	)
 
+	log.Println("=== Comparison ===")
+
+	if expectedError != "" {
+		if err != nil && strings.Contains(err.Error(), expectedError) {
+			log.Printf("  Error Match:     PASS (expected contains '%s', got '%v')", expectedError, err)
+		} else if err != nil {
+			log.Printf("  Error Match:     FAIL (expected contains '%s', got '%v')", expectedError, err)
+		} else {
+			log.Printf("  Error Match:     FAIL (expected error containing '%s', but got success)", expectedError)
+		}
+	} else if err != nil {
+		log.Printf("  Error Match:     FAIL (unexpected error: %v)", err)
+	}
+
+	if expectedResponseCode != "" {
+		expectedCode := 0
+		fmt.Sscanf(expectedResponseCode, "%d", &expectedCode)
+		if responseCode == expectedCode {
+			log.Printf("  Response Code:   PASS (expected %d, got %d)", expectedCode, responseCode)
+		} else {
+			log.Printf("  Response Code:   FAIL (expected %d, got %d)", expectedCode, responseCode)
+		}
+	}
+
+	if expectedMsg != "" {
+		if responseMsg == expectedMsg {
+			log.Printf("  Response Msg:    PASS (expected '%s', got '%s')", expectedMsg, responseMsg)
+		} else {
+			log.Printf("  Response Msg:    FAIL (expected '%s', got '%s')", expectedMsg, responseMsg)
+		}
+	}
+
+	log.Println("")
+
 	log.Println("============================================")
 	if result.Pass {
 		log.Printf("RESULT: PASSED")
@@ -230,7 +264,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	log.Printf("RESULT: FAILED - %s", result.ErrorMsg)
+	log.Printf("RESULT: FAILED")
+	log.Printf("  Reason: %s", result.ErrorMsg)
 	fmt.Printf("FAIL: %s\n", result.ErrorMsg)
 	os.Exit(1)
 }
